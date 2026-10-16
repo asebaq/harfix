@@ -1,0 +1,13 @@
+harfix
+Copyright 2026 Ahmad Sebaq
+
+This product includes a character n-gram model (src/harfix/data/arabic_char_lm.json.gz)
+whose letter statistics were derived from the following datasets, both licensed under the
+Apache License, Version 2.0:
+
+- Misraj/Misraj-DocOCR, revision 7177bf70f77ce259890d6af0bef53f18faf26ec9
+  https://huggingface.co/datasets/Misraj/Misraj-DocOCR
+- Misraj/KITAB_pdf_to_markdown_reviewed, revision 8890d721c660cd027839bc8bc48634552fe7aec6
+  https://huggingface.co/datasets/Misraj/KITAB_pdf_to_markdown_reviewed
+
+No text from these datasets is distributed with harfix; only aggregate character counts.

@@ -1,0 +1,26 @@
+{
+  "thresholds": {
+    "min_letters": 80,
+    "substitution_bits": 5.0,
+    "spike_bits": 18.0,
+    "spike_rate": 0.03,
+    "spike_min_letters": 200,
+    "unspaced_bits": 5.7,
+    "short_token_ratio": 0.46,
+    "orientation_margin": 0.5,
+    "presentation_form_ratio": 0.05,
+    "unmapped_ratio": 0.02,
+    "unmapped_min_glyphs": 5,
+    "legacy_ratio": 0.15,
+    "legacy_min_visible": 30,
+    "transposition_ratio": 0.27,
+    "mixed_order_min_share": 0.2
+  },
+  "calibration": {
+    "date": "2026-10-16",
+    "model_sha256": "3704fbc01115f6e6bc6bcfde0aba8881ebb1f2b658fce2904210fda0949e0be8",
+    "calib_pages": 73,
+    "test_pages": 73,
+    "target_false_flag": 0.005
+  }
+}
