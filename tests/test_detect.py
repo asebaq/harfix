@@ -106,6 +106,14 @@ def test_stray_ligature_glyphs_are_not_mistaken_for_quran_fonts():
     assert "quran_glyph_codes" not in assess_text(ligatures, order_known=False).reasons
 
 
+def test_ornate_parentheses_around_quotations_are_not_quran_glyph_codes(clean_text):
+    # ﴿…﴾ (U+FD3F/U+FD3E) are punctuation in the presentation-forms block, and empty pairs
+    # alternate between adjacent code points just like numbered glyph IDs.
+    quoted = "\n".join(f"{line} ﴿ ﴾ [البقرة: 87] ﴿ ﴾" for line in clean_text.splitlines())
+    result = assess_text(quoted, order_known=False)
+    assert (result.route, result.reasons) == ("keep", [])
+
+
 def test_short_text_is_not_judged():
     result = assess_text("المادة الأولى")
     assert result.route == "keep"

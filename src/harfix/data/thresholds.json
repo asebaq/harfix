@@ -24,7 +24,7 @@
     "mixed_order_min_share": 0.2
   },
   "calibration": {
-    "date": "2026-10-17",
+    "date": "2026-10-18",
     "model_sha256": "3704fbc01115f6e6bc6bcfde0aba8881ebb1f2b658fce2904210fda0949e0be8",
     "calib_pages": 73,
     "test_pages": 73,

@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Fixed: ornate parentheses ﴾﴿ around Quran quotations were counted as presentation forms,
+  so pages quoting many verses could be flagged `quran_glyph_codes`. Only characters that
+  NFKC decomposes into letters now count as presentation forms.
+- Added a real-book benchmark (`scripts/benchmark.py`, `reports/benchmark.md`): 57 PDFs
+  linked from al-Maktaba al-Shamela, labelled from Shamela's typed transcriptions.
+- README: logo and badges.
+
 ## 0.1.0
 
 First release.

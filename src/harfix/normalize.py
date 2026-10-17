@@ -41,21 +41,29 @@ _BIDI_CONTROLS = frozenset(
 )
 
 
+# Arabic presentation forms: shaped letters and ligatures that NFKC decomposes into base
+# letters. Symbols in the same blocks with no decomposition, such as the ornate
+# parentheses ﴾﴿ that wrap Quran quotations, are punctuation and are left out.
+_FORMS = frozenset(
+    chr(cp)
+    for cp in [*range(0xFB50, 0xFE00), *range(0xFE70, 0xFF00)]
+    if unicodedata.normalize("NFKC", chr(cp)) != chr(cp)
+)
+# Presentation Forms-A: ligatures that ordinary shaping output almost never uses.
+_LIGATURES = frozenset(ch for ch in _FORMS if ord(ch) < 0xFE00)
+_LIGATURE_FORMS = re.compile("[" + re.escape("".join(sorted(_LIGATURES))) + "]")
+
+
 def _is_presentation_form(ch: str) -> bool:
-    cp = ord(ch)
-    return 0xFB50 <= cp <= 0xFDFF or 0xFE70 <= cp <= 0xFEFF
+    return ch in _FORMS
 
 
 def _is_ligature_form(ch: str) -> bool:
-    """Presentation Forms-A: ligatures that ordinary shaping output almost never uses."""
-    return 0xFB50 <= ord(ch) <= 0xFDFF
-
-
-_LIGATURE_FORMS = re.compile(r"[\uFB50-\uFDFF]")
+    return ch in _LIGATURES
 
 
 def drop_ligature_forms(text: str) -> str:
-    """Replace Presentation Forms-A code points with spaces (used for Quran glyph fonts)."""
+    """Replace Presentation Forms-A ligatures with spaces (used for Quran glyph fonts)."""
     return _LIGATURE_FORMS.sub(" ", text)
 
 
@@ -79,7 +87,7 @@ def _is_arabic_block(ch: str) -> bool:
 
 # pdfminer writes "(cid:N)" for glyph codes it cannot map to Unicode at all.
 _CID = re.compile(r"\(cid:\d+\)")
-_PRESENTATION_RUN = re.compile(r"[\uFB50-\uFDFF\uFE70-\uFEFF]+")
+_PRESENTATION_RUN = re.compile("[" + re.escape("".join(sorted(_FORMS))) + "]+")
 _LATIN_WORD = re.compile(r"[A-Za-z]+")
 # Punctuation that may close or open a real word; anything else inside a word is suspect.
 _WORD_EDGES = ".,;:!?()[]{}\"'«»-–—/"

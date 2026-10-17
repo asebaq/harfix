@@ -1,6 +1,6 @@
 # harfix calibration report
 
-Generated 2026-10-17 by `scripts/calibrate.py`. Model `3704fbc01115`.
+Generated 2026-10-18 by `scripts/calibrate.py`. Model `3704fbc01115`.
 
 Thresholds were fitted on the **calib** split; every rate below is measured on the
 untouched **test** split (73 pages). Data: Misraj-DocOCR and

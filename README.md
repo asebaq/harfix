@@ -140,6 +140,31 @@ on its short runs pooled across the scanned pages; such font reports carry
 
 ## Accuracy
 
+### Real books
+
+Full numbers: [`reports/benchmark.md`](reports/benchmark.md). 57 printed-edition PDFs with
+a text layer, linked from al-Maktaba al-Shamela (up to six per subject category), up to 40
+evenly spaced pages each: 2,280 pages. Labels come from Shamela's typed transcriptions,
+not from harfix: a font run is `broken` when at most 35% of its words exist in those
+transcriptions (or an English word list) and `clean` from 75% up. No OCR is involved. Of
+24 labelled runs checked by hand, 23 matched their label and one was borderline.
+
+| Unit | Precision | Recall | Labelled clean / broken |
+|---|---:|---:|---:|
+| Pages | 98.7% | 99.8% | 412 / 1,162 |
+| Font runs | 97.7% | 95.7% | 815 / 1,720 |
+
+More than half of the labelled pages have a broken text layer, mostly pre-Unicode fonts
+and fonts with no Unicode map. 54 of the 74 missed runs are one publisher's pre-Unicode
+font that maps Arabic onto ASCII digits and punctuation (see Limitations). Among the
+flagged clean runs, the largest group is fonts whose elongation glyphs extract as U+FFFD
+inside otherwise correct words; harfix sends those to `ocr`. Two rules (the
+consecutive-code-point condition for Quran glyph fonts and the exclusion of ornate
+parentheses ﴾﴿) were added after inspecting some of these books, so this is not a fully
+held-out measurement.
+
+### Synthetic corruptions
+
 Full numbers: [`reports/calibration.md`](reports/calibration.md). Thresholds were fitted on
 one held-out split of 462 public Arabic pages and measured on another, then raised
 (`DOMAIN_FLOORS`) after inspecting clean runs in Egyptian court and statute PDFs.
@@ -158,20 +183,6 @@ On the test split, windows of at least 80 Arabic letters:
 | Lost word boundaries (`check`) | 99.8% |
 | Padding letters inserted (seen in Egyptian court books) | 72% (87% at ≥500 letters) |
 | Only 6 of 36 letters swapped | 40% (52% at ≥500 letters) |
-
-Real books: `scripts/fetch_shamela.py` samples printed-edition PDFs listed in
-al-Maktaba al-Shamela (two per subject category, seed 0); none was used for any threshold.
-Of 46 distinct books (first 40 pages each), 33 are image-only scans (`no_text_layer`). Of
-the 13 with a text layer, 12 have fonts flagged on at least some pages: pre-Unicode `AXt`,
-`Adv…` and `MCS` fonts (`legacy_encoding`), fonts with no Unicode map at all
-(`unmapped_glyphs`), a `QCF_P206` verse font (`quran_glyph_codes`), Lotus and Uthman Taha
-fonts whose text is fragmented with stray dammas (`same_script_substitution`), Yakout text
-stored as presentation forms (`repair`), and OCR text layers with garbled title pages.
-Samples of flagged fonts in 8 of those 12 books, covering every kind above, were inspected
-by hand: all were genuinely broken, but one was misattributed (a Lotus layer with correct
-letters and no word spaces is reported as `same_script_substitution`, see Limitations).
-The inspection also caught stray Lotus ligature glyphs misread as a Quran font, which led
-to the consecutive-code-point condition. This is a spot check, not a labeled evaluation.
 
 ## Limitations
 
@@ -204,9 +215,15 @@ uv sync --group model
 uv run python scripts/build_model.py    # pinned Hugging Face revisions, reproducible output
 uv run python scripts/fetch_shamela.py  # needs the Shamela desktop app's catalogue
 uv run python scripts/calibrate.py --pages 1-40 --pdf corpus/shamela/*.pdf
+
+# real-book benchmark
+uv run python scripts/fetch_shamela.py --out corpus/shamela_text --per-category 6 --text-only
+uv run python scripts/benchmark.py fetch-text   # Shamela transcriptions, about 80 minutes
+uv run python scripts/benchmark.py run
 ```
 
-The Shamela PDFs are third-party works: keep them local, never commit or redistribute them.
+The Shamela PDFs and transcriptions are third-party works: keep them local, never commit
+or redistribute them.
 
 ## License
 
