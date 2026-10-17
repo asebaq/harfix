@@ -16,8 +16,7 @@ harfix never modifies text. It only decides.
 ## Install
 
 ```bash
-# from a clone of this repository (PyPI release pending)
-uv sync            # or: pip install .
+pip install harfix        # or: uv add harfix
 ```
 
 Python 3.10+. The only runtime dependency is `pdfminer.six`; the two character models
