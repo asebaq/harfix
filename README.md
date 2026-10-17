@@ -1,4 +1,33 @@
-# harfix
+<h1 align="center">
+  <a href="https://github.com/asebaq/harfix">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/asebaq/harfix/main/docs/assets/cover_dark.svg">
+      <img alt="harfix" src="https://raw.githubusercontent.com/asebaq/harfix/main/docs/assets/cover_light.svg" width="640">
+    </picture>
+  </a>
+</h1>
+
+<p align="center">
+  <a href="https://github.com/asebaq/harfix/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/asebaq/harfix/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://pypi.org/project/harfix/"><img alt="PyPI version" src="https://img.shields.io/pypi/v/harfix?color=0F766E"></a>
+  <a href="https://pypi.org/project/harfix/"><img alt="Python versions" src="https://img.shields.io/python/required-version-toml?tomlFilePath=https%3A%2F%2Fraw.githubusercontent.com%2Fasebaq%2Fharfix%2Fmain%2Fpyproject.toml"></a>
+  <a href="https://pypistats.org/packages/harfix"><img alt="PyPI downloads" src="https://img.shields.io/pypi/dm/harfix"></a>
+  <a href="https://github.com/asebaq/harfix/blob/main/LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/github/license/asebaq/harfix"></a>
+  <br/>
+  <a href="https://github.com/astral-sh/ruff"><img alt="Ruff" src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json"></a>
+  <a href="https://github.com/astral-sh/uv"><img alt="uv" src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json"></a>
+  <img alt="Runtime dependency: pdfminer.six only" src="https://img.shields.io/badge/runtime%20deps-pdfminer.six-0F766E">
+  <img alt="Language: Arabic" src="https://img.shields.io/badge/language-%D8%A7%D9%84%D8%B9%D8%B1%D8%A8%D9%8A%D8%A9-DFE0E5">
+</p>
+
+<p align="center">
+  <a href="#install"><strong>Install</strong></a> &middot;
+  <a href="#use"><strong>Use</strong></a> &middot;
+  <a href="#routes-and-reasons"><strong>Routes</strong></a> &middot;
+  <a href="#how-it-works"><strong>How it works</strong></a> &middot;
+  <a href="#accuracy"><strong>Accuracy</strong></a> &middot;
+  <a href="#roadmap"><strong>Roadmap</strong></a>
+</p>
 
 **A quality gate for Arabic text extracted from PDFs.** harfix tells you, per page and per
 font, whether the text you are about to index is trustworthy, needs a cheap repair, needs
