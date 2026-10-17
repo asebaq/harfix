@@ -111,6 +111,29 @@ def legacy_encoding(text: str) -> str:
     return _remap(text, {ch: chr(0xC0 + i) for i, ch in enumerate(LETTERS)})
 
 
+def ascii_legacy_encoding(text: str) -> str:
+    """Pre-Unicode Arabic font whose glyphs sit on printable ASCII codes."""
+    printable = [chr(cp) for cp in range(0x21, 0x7F)]
+    _rng(text, "ascii").shuffle(printable)
+    return _remap(text, dict(zip(LETTERS, printable, strict=False)))
+
+
+def quran_glyph_codes(text: str) -> str:
+    """King Fahd Complex page fonts: one Presentation Forms-A code point per word."""
+    span = 0xFDFF - 0xFB51
+    count = 0
+    lines = []
+    for line in text.splitlines():
+        words = []
+        for word in line.split(" "):
+            if letter_count(word):
+                word = chr(0xFB51 + count % span)
+                count += 1
+            words.append(word)
+        lines.append(" ".join(words))
+    return "\n".join(lines)
+
+
 def presentation_forms(text: str) -> str:
     return "\n".join(arabic_reshaper.reshape(line) for line in text.splitlines())
 
@@ -180,6 +203,8 @@ CASES: list[tuple[str, Callable[[str], str], str | None, str | None]] = [
     ("private-use glyphs", private_use, "unmapped_glyphs", "unmapped_glyphs"),
     ("raw CID codes", cid_codes, "unmapped_glyphs", "unmapped_glyphs"),
     ("legacy encoding", legacy_encoding, "legacy_encoding", "legacy_encoding"),
+    ("ASCII legacy encoding", ascii_legacy_encoding, "legacy_encoding", "legacy_encoding"),
+    ("Quran glyph codes", quran_glyph_codes, "quran_glyph_codes", "quran_glyph_codes"),
     ("presentation forms", presentation_forms, "presentation_forms", "presentation_forms"),
     ("lam-alef transposition", lam_alef_transposition, "-", "lam_alef_transposition"),
     ("lost word boundaries", lost_boundaries, "-", "lost_word_boundaries"),
@@ -300,17 +325,24 @@ def scan_real(pdfs: list[str], pages: list[int] | None, t: Thresholds) -> list[d
         for page in report.pages:
             for font in page.fonts:
                 a = font.assessment
-                if not a.sufficient and a.route == "keep":
+                if not a.decisive:
                     continue
-                entry = fonts[font.font]
+                if font.scope == "page":
+                    entry = fonts[font.font]
+                    entry["letters"] += int(a.metrics.get("arabic_letters", 0))
+                    if "bits" in a.metrics:
+                        entry["bits"].append(float(a.metrics["bits"]))
+                else:
+                    # One verdict on the font's short runs pooled across pages: count it once.
+                    entry = fonts[f"{font.font} (short runs, pooled)"]
+                    entry["letters"] = int(a.metrics.get("arabic_letters", 0))
+                    if "bits" in a.metrics:
+                        entry["bits"] = [float(a.metrics["bits"])]
                 entry["runs"] += 1
-                entry["letters"] += int(a.metrics.get("arabic_letters", 0))
-                if "bits" in a.metrics:
-                    entry["bits"].append(float(a.metrics["bits"]))
                 entry["routes"][a.route] += 1
         summary.append(
             {
-                "file": Path(path).name,
+                "file": _title(Path(path)),
                 "pages": len(report.pages),
                 "page_routes": report.route_counts,
                 "fonts": {
@@ -327,6 +359,17 @@ def scan_real(pdfs: list[str], pages: list[int] | None, t: Thresholds) -> list[d
             }
         )
     return summary
+
+
+def _title(path: Path) -> str:
+    """Book title from a `fetch_shamela.py` manifest next to the PDF, else the file name."""
+    manifest = path.parent / "manifest.jsonl"
+    if manifest.is_file():
+        for line in manifest.open(encoding="utf-8"):
+            book = json.loads(line)
+            if book.get("file") == path.name:
+                return f"{book['name']} (Shamela {book['book_id']}, {book['category']})"
+    return path.name
 
 
 # ---------------------------------------------------------------- report
@@ -351,8 +394,8 @@ def write_report(
         "## Thresholds",
         "",
         "`fitted` targets a 0.5% false-flag rate per clean window. `used` raises some values",
-        "to `DOMAIN_FLOORS` (see `scripts/calibrate.py`) so clean Egyptian legal text in the",
-        "dev PDFs is not flagged.",
+        "to `DOMAIN_FLOORS` (see `scripts/calibrate.py`), chosen so clean Egyptian court and",
+        "statute PDFs are not flagged.",
         "",
         "| Name | Fitted | Used |",
         "|---|---:|---:|",
@@ -428,8 +471,10 @@ def write_report(
         "  letters) and light padding are caught only part of the time.",
         "- The model is trained on about 300 pages of modern standard Arabic. Classical or",
         "  dialectal text scores higher and needs its own calibration before relying on it.",
-        "- Runs shorter than `min_letters` are not judged on their own; spike rates are only",
-        "  used from `spike_min_letters` up.",
+        "- Runs shorter than `min_letters` are judged by pooling the font's short runs across",
+        "  the scanned pages; spike rates are only used from `spike_min_letters` up.",
+        "- Real PDFs are only those with a text layer the scan can judge; scanned books are",
+        "  routed to `ocr` as `no_text_layer` and say nothing about detection accuracy.",
         "",
     ]
     return "\n".join(lines)

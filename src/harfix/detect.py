@@ -8,11 +8,13 @@ from functools import lru_cache
 from importlib import resources
 
 from .model import ModelPair, default_models
-from .normalize import BOUNDARY, letters_only, profile, strip_decorations
+from .normalize import BOUNDARY, drop_ligature_forms, letters_only, profile, strip_decorations
 
 # Ordered from least to most severe; a page takes the most severe route of its parts.
 ROUTES = ("keep", "repair", "reextract", "ocr")
 _MIN_LINE_LETTERS = 20
+# `assess_document` splits text without page breaks into pieces of about this many letters.
+SEGMENT_LETTERS = 500
 
 
 @dataclass(frozen=True)
@@ -37,6 +39,16 @@ class Thresholds:
     # Pre-Unicode Arabic fonts: mostly Latin-1/math symbols and almost no Arabic letters.
     legacy_ratio: float = 0.15
     legacy_min_visible: int = 30
+    # Pre-Unicode Arabic fonts mapped onto ASCII: Latin "words" with almost no vowels, or
+    # with digits, symbols and case flips inside them.
+    latin_min_words: int = 15
+    latin_vowel_ratio: float = 0.25
+    latin_irregular_ratio: float = 0.3
+    # Quran glyph fonts: one Presentation Forms-A code point per word, numbered in order.
+    quran_min_forms: int = 8
+    quran_ligature_share: float = 0.5
+    quran_short_run_share: float = 0.6
+    quran_consecutive_share: float = 0.5
     transposition_ratio: float = 0.27
     mixed_order_min_share: float = 0.2
 
@@ -145,6 +157,11 @@ class Assessment:
     sufficient: bool
     metrics: dict[str, float | int | str] = field(default_factory=dict)
 
+    @property
+    def decisive(self) -> bool:
+        """Judged on enough text, or flagged by a check that needs no minimum length."""
+        return self.sufficient or self.route != "keep"
+
     def to_dict(self) -> dict:
         return asdict(self)
 
@@ -171,6 +188,8 @@ def assess_text(
         "presentation_form_ratio": round(prof.presentation_form_ratio, 4),
         "unmapped_ratio": round(prof.unmapped_ratio, 4),
         "legacy_ratio": round(prof.legacy_ratio, 4),
+        "latin_vowel_ratio": round(prof.latin_vowel_ratio, 4),
+        "irregular_latin_word_ratio": round(prof.irregular_latin_word_ratio, 4),
         "bidi_controls": prof.bidi_controls,
     }
     reasons: list[str] = []
@@ -182,15 +201,26 @@ def assess_text(
         if ROUTES.index(new_route) > ROUTES.index(route):
             route = new_route
 
-    # Both are visible even when too few Arabic letters survive to score.
+    # All three are visible even when too few Arabic letters survive to score.
     if prof.unmapped >= t.unmapped_min_glyphs and prof.unmapped_ratio > t.unmapped_ratio:
         flag("unmapped_glyphs", "ocr")
-    if (
-        prof.visible >= t.legacy_min_visible
-        and prof.arabic_ratio < 0.2
-        and prof.legacy_ratio > t.legacy_ratio
-    ):
+    symbol_legacy = prof.visible >= t.legacy_min_visible and prof.legacy_ratio > t.legacy_ratio
+    ascii_legacy = prof.latin_words >= t.latin_min_words and (
+        prof.latin_vowel_ratio < t.latin_vowel_ratio
+        or prof.irregular_latin_word_ratio > t.latin_irregular_ratio
+    )
+    if prof.arabic_ratio < 0.2 and (symbol_legacy or ascii_legacy):
         flag("legacy_encoding", "ocr")
+    if (
+        prof.presentation_forms >= t.quran_min_forms
+        and prof.ligature_form_share > t.quran_ligature_share
+        and prof.short_presentation_run_share > t.quran_short_run_share
+        and prof.consecutive_ligature_share > t.quran_consecutive_share
+    ):
+        # Glyph IDs, not letters: NFKC would turn them into wrong words. Judge the rest.
+        flag("quran_glyph_codes", "ocr")
+        text = drop_ligature_forms(text)
+        prof = profile(text)
 
     m = measure(text, models, t)
     metrics["arabic_letters"] = m.letters
@@ -239,3 +269,97 @@ def assess_text(
             flag("lam_alef_transposition", "reextract")
 
     return Assessment(route, reasons, True, metrics)
+
+
+@dataclass
+class Segment:
+    """One page (text split at form feeds) or one run of lines of an extractor's output."""
+
+    index: int
+    page: int | None
+    start_line: int
+    end_line: int
+    assessment: Assessment
+
+    def to_dict(self) -> dict:
+        return {
+            "index": self.index,
+            "page": self.page,
+            "start_line": self.start_line,
+            "end_line": self.end_line,
+            **self.assessment.to_dict(),
+        }
+
+
+@dataclass
+class TextReport:
+    route: str
+    reasons: list[str]
+    segments: list[Segment]
+
+    def to_dict(self) -> dict:
+        return {
+            "route": self.route,
+            "reasons": self.reasons,
+            "segments": [s.to_dict() for s in self.segments],
+        }
+
+
+def worst(assessments: list[Assessment]) -> tuple[str, list[str]]:
+    """Most severe route, with the reasons behind it (or every reason if all are keep)."""
+    route = max((a.route for a in assessments), default="keep", key=ROUTES.index)
+    if route == "keep":
+        return route, sorted({r for a in assessments for r in a.reasons})
+    return route, sorted({r for a in assessments if a.route != "keep" for r in a.reasons})
+
+
+def _split(text: str, segment_letters: int, min_letters: int) -> list[tuple[int | None, int, str]]:
+    """(page, first line number, text) pieces. Pages come from form feeds (pdftotext)."""
+    if "\f" in text:
+        pieces, line = [], 1
+        for number, page in enumerate(text.split("\f"), start=1):
+            if page.strip():
+                pieces.append((number, line, page))
+            line += page.count("\n")
+        return pieces
+
+    pieces: list[tuple[int | None, int, str]] = []
+    lines = text.split("\n")
+    start, letters = 0, 0
+    for i, line in enumerate(lines):
+        letters += len(letters_only(line).replace(BOUNDARY, ""))
+        if letters >= segment_letters:
+            pieces.append((None, start + 1, "\n".join(lines[start : i + 1])))
+            start, letters = i + 1, 0
+    rest = "\n".join(lines[start:])
+    if rest.strip():
+        if pieces and letters < min_letters:
+            # Too short to judge alone: fold the tail into the previous piece.
+            _, first, previous = pieces.pop()
+            pieces.append((None, first, previous + "\n" + rest))
+        else:
+            pieces.append((None, start + 1, rest))
+    return pieces
+
+
+def assess_document(
+    text: str,
+    *,
+    order_known: bool = True,
+    segment_letters: int = SEGMENT_LETTERS,
+    models: ModelPair | None = None,
+    thresholds: Thresholds | None = None,
+) -> TextReport:
+    """Assess a whole extracted document page by page, so a few bad pages are not averaged
+    away. Text with form feeds is split into pages; other text into runs of whole lines
+    holding at least `segment_letters` Arabic letters."""
+    models = models or default_models()
+    t = thresholds or default_thresholds()
+    segments = []
+    for index, (page, first, piece) in enumerate(_split(text, segment_letters, t.min_letters)):
+        assessment = assess_text(piece, order_known=order_known, models=models, thresholds=t)
+        last = first + piece.rstrip("\n").count("\n")
+        segments.append(Segment(index, page, first, last, assessment))
+    decisive = [s.assessment for s in segments if s.assessment.decisive]
+    route, reasons = worst(decisive or [s.assessment for s in segments])
+    return TextReport(route, reasons, segments)

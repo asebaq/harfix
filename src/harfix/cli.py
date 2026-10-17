@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-from .detect import ROUTES, assess_text
+from .detect import ROUTES, assess_document
 from .pdf import HarfixError, scan_pdf
 
 
@@ -70,15 +70,31 @@ def _scan(args: argparse.Namespace) -> int:
 
 def _check(args: argparse.Namespace) -> int:
     text = sys.stdin.read() if args.file == "-" else Path(args.file).read_text(encoding="utf-8")
-    assessment = assess_text(text, order_known=True)
+    report = assess_document(text)
     if args.json:
-        json.dump(assessment.to_dict(), sys.stdout, ensure_ascii=False, indent=2)
+        json.dump(report.to_dict(), sys.stdout, ensure_ascii=False, indent=2)
         print()
     else:
-        print(f"{assessment.route}: {', '.join(assessment.reasons) or 'no issues found'}")
-        for key, value in assessment.metrics.items():
-            print(f"  {key}: {value}")
-    return 1 if _fails(assessment.route, args.fail_on) else 0
+        print(f"{report.route}: {', '.join(report.reasons) or 'no issues found'}")
+        counts = {route: 0 for route in ROUTES}
+        for segment in report.segments:
+            counts[segment.assessment.route] += 1
+        unit = "pages" if any(s.page is not None for s in report.segments) else "segments"
+        print(f"  {unit}: " + ", ".join(f"{route}={n}" for route, n in counts.items() if n))
+        for segment in report.segments:
+            a = segment.assessment
+            if a.route == "keep" and not args.verbose:
+                continue
+            where = (
+                f"p{segment.page}"
+                if segment.page is not None
+                else f"lines {segment.start_line}-{segment.end_line}"
+            )
+            print(f"  {where:<16} {a.route:<9} {', '.join(a.reasons) or '-'}")
+            if args.verbose:
+                for key, value in a.metrics.items():
+                    print(f"      {key}: {value}")
+    return 1 if _fails(report.route, args.fail_on) else 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -97,10 +113,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     scan.set_defaults(func=_scan)
 
-    check = sub.add_parser("check", help="assess text produced by any extractor")
+    check = sub.add_parser(
+        "check", help="assess text produced by any extractor, page by page (form feeds)"
+    )
     check.add_argument("file", nargs="?", default="-", help="UTF-8 text file, or - for stdin")
     check.add_argument("--json", action="store_true")
-    check.add_argument("--fail-on", choices=ROUTES[1:], help="exit 1 if the route is this or worse")
+    check.add_argument(
+        "-v", "--verbose", action="store_true", help="show every segment and its metrics"
+    )
+    check.add_argument(
+        "--fail-on", choices=ROUTES[1:], help="exit 1 if any segment needs this route or worse"
+    )
     check.set_defaults(func=_check)
     return parser
 

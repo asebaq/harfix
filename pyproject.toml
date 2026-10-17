@@ -1,6 +1,6 @@
 [project]
 name = "harfix"
-version = "0.1.0.dev0"
+version = "0.1.0"
 description = "Quality gate for Arabic PDF text layers: detect garbled, reversed, or unmapped Arabic before it reaches your index."
 readme = "README.md"
 license = "Apache-2.0"
@@ -19,6 +19,11 @@ dependencies = ["pdfminer.six>=20240706"]
 
 [project.scripts]
 harfix = "harfix.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/asebaq/harfix"
+Issues = "https://github.com/asebaq/harfix/issues"
+Changelog = "https://github.com/asebaq/harfix/blob/main/CHANGELOG.md"
 
 [dependency-groups]
 dev = ["pytest>=8.3", "ruff>=0.7"]

@@ -39,6 +39,17 @@ def isolated_forms(text: str) -> str:
     return "".join(table.get(ch, ch) for ch in text)
 
 
+# A pre-Unicode font whose glyphs sit on printable ASCII codes, the way old Arabic
+# desktop-publishing fonts did: the text layer extracts as Latin-looking gibberish.
+_PRINTABLE = [chr(cp) for cp in range(0x21, 0x7F)]
+random.Random(11).shuffle(_PRINTABLE)
+ASCII_LEGACY = dict(zip(sorted(ARABIC_LETTERS), _PRINTABLE, strict=False))
+
+
+def ascii_legacy(text: str) -> str:
+    return "".join(ASCII_LEGACY.get(ch, ch) for ch in text)
+
+
 @pytest.fixture
 def clean_text() -> str:
     return CLEAN

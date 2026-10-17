@@ -1,7 +1,7 @@
 import random
 
 import pytest
-from conftest import CLEAN_LINES
+from conftest import ASCII_LEGACY, CLEAN_LINES
 from pdf_fixture import LETTERS, build_pdf
 
 from harfix import HarfixError, scan_pdf
@@ -48,3 +48,32 @@ def test_unreadable_file_raises_harfix_error(tmp_path):
     bad.write_bytes(b"not a pdf")
     with pytest.raises(HarfixError):
         scan_pdf(bad)
+
+
+def test_ascii_encoded_legacy_font_needs_ocr(tmp_path):
+    path = tmp_path / "legacy.pdf"
+    path.write_bytes(build_pdf([[("AXt", line) for line in CLEAN_LINES]], {"AXt": ASCII_LEGACY}))
+    page = scan_pdf(path).pages[0]
+    assert (page.route, page.reasons) == ("ocr", ["legacy_encoding"])
+
+
+def test_short_broken_font_is_judged_across_the_document(tmp_path):
+    # A broken heading font with too few letters per page to judge on any single page.
+    heading = "تهدف هذه المكتبة إلى فحص النصوص"
+    pages = [[("Heading", heading)] + [("Body", line) for line in CLEAN_LINES]] * 5
+    path = tmp_path / "headings.pdf"
+    path.write_bytes(build_pdf(pages, {"Heading": WRONG, "Body": IDENTITY}))
+
+    report = scan_pdf(path)
+    assert [p.route for p in report.pages] == ["ocr"] * 5
+    fonts = {f.font: (f.assessment.route, f.scope) for f in report.pages[0].fonts}
+    assert fonts == {"Heading": ("ocr", "document"), "Body": ("keep", "page")}
+
+
+def test_subsets_of_one_typeface_are_judged_separately(tmp_path):
+    page = [("AAAAAA+Naskh", line) for line in CLEAN_LINES]
+    page += [("BBBBBB+Naskh", line) for line in CLEAN_LINES]
+    path = tmp_path / "subsets.pdf"
+    path.write_bytes(build_pdf([page], {"AAAAAA+Naskh": IDENTITY, "BBBBBB+Naskh": WRONG}))
+    routes = {f.font: f.assessment.route for f in scan_pdf(path).pages[0].fonts}
+    assert routes == {"AAAAAA+Naskh": "keep", "BBBBBB+Naskh": "ocr"}

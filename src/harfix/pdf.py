@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import re
 from collections import defaultdict
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -13,10 +12,8 @@ from pdfminer.layout import LTAnno, LTChar, LTContainer, LTImage, LTPage, LTText
 from pdfminer.pdfparser import PDFSyntaxError
 from pdfminer.psparser import PSException
 
-from .detect import ROUTES, Assessment, Thresholds, assess_text, default_thresholds
+from .detect import ROUTES, Assessment, Thresholds, assess_text, default_thresholds, worst
 from .model import ModelPair, default_models
-
-_SUBSET_PREFIX = re.compile(r"^[A-Z]{6}\+")
 
 
 class HarfixError(Exception):
@@ -25,11 +22,16 @@ class HarfixError(Exception):
 
 @dataclass
 class FontReport:
+    # The PDF font name, subset tag included: two subsets of one typeface are separate
+    # embedded fonts and can carry different glyph-to-Unicode maps.
     font: str
     assessment: Assessment
+    # "page": judged on this page's text. "document": too little text on this page, so
+    # judged on this font's short runs pooled across every scanned page.
+    scope: str = "page"
 
     def to_dict(self) -> dict:
-        return {"font": self.font, **self.assessment.to_dict()}
+        return {"font": self.font, "scope": self.scope, **self.assessment.to_dict()}
 
 
 @dataclass
@@ -70,6 +72,14 @@ class DocumentReport:
         }
 
 
+@dataclass
+class _Page:
+    number: int
+    runs: dict[str, str]
+    has_images: bool
+    assessments: dict[str, Assessment]
+
+
 def scan_pdf(
     path: str | Path,
     *,
@@ -80,18 +90,59 @@ def scan_pdf(
     """Assess every font run on the requested 1-based pages of a PDF."""
     models = models or default_models()
     t = thresholds or default_thresholds()
+
+    def assess(text: str) -> Assessment:
+        return assess_text(text, order_known=False, models=models, thresholds=t)
+
     page_numbers = sorted({p - 1 for p in pages}) if pages is not None else None
-    reports = []
+    scanned: list[_Page] = []
     try:
         for index, layout in enumerate(extract_pages(str(path), page_numbers=page_numbers)):
             number = page_numbers[index] + 1 if page_numbers is not None else index + 1
-            reports.append(_scan_page(number, layout, models, t))
+            runs, has_images = _collect_page(layout)
+            assessments = {font: assess(text) for font, text in runs.items()}
+            scanned.append(_Page(number, runs, has_images, assessments))
     except (PDFSyntaxError, PSException, ValueError, KeyError) as error:
         raise HarfixError(f"Cannot read PDF {path}: {error}") from error
-    return DocumentReport(str(path), reports)
+
+    # A font's ToUnicode map is the same on every page, so runs too short to judge on their
+    # own (headings, running heads, verse numbers) are judged together.
+    short: dict[str, list[str]] = defaultdict(list)
+    for page in scanned:
+        for font, a in page.assessments.items():
+            if not a.decisive:
+                short[font].append(page.runs[font])
+    pooled = {font: assess("\n".join(texts)) for font, texts in short.items() if len(texts) > 1}
+
+    return DocumentReport(str(path), [_report(page, pooled, assess) for page in scanned])
 
 
-def _scan_page(number: int, layout: LTPage, models: ModelPair, t: Thresholds) -> PageReport:
+def _report(
+    page: _Page, pooled: dict[str, Assessment], assess: Callable[[str], Assessment]
+) -> PageReport:
+    fonts = []
+    for font, a in page.assessments.items():
+        whole = pooled.get(font)
+        if not a.decisive and whole and whole.decisive:
+            fonts.append(FontReport(font, whole, "document"))
+        else:
+            fonts.append(FontReport(font, a))
+    fonts.sort(key=lambda f: -int(f.assessment.metrics.get("arabic_letters", 0)))
+
+    if not any(text.strip() for text in page.runs.values()):
+        if page.has_images:
+            return PageReport(page.number, "ocr", ["no_text_layer"], True, fonts)
+        return PageReport(page.number, "keep", ["blank_page"], False, fonts)
+
+    decisive = [f.assessment for f in fonts if f.assessment.decisive]
+    if not decisive:
+        # Every font run is short; judge the page's text as a whole instead.
+        decisive = [assess("\n".join(page.runs.values()))]
+    route, reasons = worst(decisive)
+    return PageReport(page.number, route, reasons, page.has_images, fonts)
+
+
+def _collect_page(layout: LTPage) -> tuple[dict[str, str], bool]:
     runs: dict[str, list[str]] = defaultdict(list)
     has_images = False
     for item in _walk(layout):
@@ -102,38 +153,7 @@ def _scan_page(number: int, layout: LTPage, models: ModelPair, t: Thresholds) ->
         elif isinstance(item, LTChar):
             # Characters inside figures are not grouped into lines by pdfminer.
             runs[_font_name(item)].append(item.get_text())
-
-    fonts = [
-        FontReport(
-            font, assess_text("".join(chunks), order_known=False, models=models, thresholds=t)
-        )
-        for font, chunks in runs.items()
-    ]
-    fonts.sort(key=lambda f: -int(f.assessment.metrics.get("arabic_letters", 0)))
-
-    if not any("".join(chunks).strip() for chunks in runs.values()):
-        if has_images:
-            return PageReport(number, "ocr", ["no_text_layer"], True, fonts)
-        return PageReport(number, "keep", ["blank_page"], False, fonts)
-
-    decisive = [
-        f.assessment for f in fonts if f.assessment.sufficient or f.assessment.route != "keep"
-    ]
-    if not decisive:
-        # Each font run is short; judge the page's text as a whole instead.
-        whole = assess_text(
-            "\n".join("".join(c) for c in runs.values()),
-            order_known=False,
-            models=models,
-            thresholds=t,
-        )
-        decisive = [whole]
-
-    route = max((a.route for a in decisive), key=ROUTES.index)
-    reasons = sorted({r for a in decisive for r in a.reasons if a.route != "keep"})
-    if route == "keep":
-        reasons = sorted({r for a in decisive for r in a.reasons})
-    return PageReport(number, route, reasons, has_images, fonts)
+    return {font: "".join(chunks) for font, chunks in runs.items()}, has_images
 
 
 def _walk(container: LTContainer) -> Iterator:
@@ -144,7 +164,7 @@ def _walk(container: LTContainer) -> Iterator:
 
 
 def _font_name(char: LTChar) -> str:
-    return _SUBSET_PREFIX.sub("", char.fontname or "unknown")
+    return char.fontname or "unknown"
 
 
 def _collect_line(line: LTTextLine, runs: dict[str, list[str]]) -> None:
