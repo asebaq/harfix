@@ -96,7 +96,14 @@ def _fetch_book(book: str, target: Path) -> None:
     while page and page != "None":
         data = _page(book, page)
         text = html.unescape(_TAGS.sub(" ", data.get("nass") or ""))
-        lines.append(json.dumps({"page": data["pageId"], "text": text}, ensure_ascii=False))
+        record = {
+            "page": data["pageId"],
+            # Printed page number and volume of the edition, when Shamela has them.
+            "printed": data.get("pageNum"),
+            "part": data.get("part") or None,
+            "text": text,
+        }
+        lines.append(json.dumps(record, ensure_ascii=False))
         page = data.get("nextId")
         time.sleep(PAUSE)
     partial = target.with_suffix(".part")

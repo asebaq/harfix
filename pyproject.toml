@@ -34,6 +34,8 @@ Changelog = "https://github.com/asebaq/harfix/blob/main/CHANGELOG.md"
 dev = ["pytest>=8.3", "ruff>=0.7"]
 # Only needed to rebuild the packaged language model and thresholds.
 model = ["duckdb>=1.1", "arabic-reshaper>=3.0"]
+# Only needed by scripts/decoder_prototype.py.
+decoder = ["numpy>=1.26", "scipy>=1.11"]
 
 [build-system]
 requires = ["hatchling>=1.27"]

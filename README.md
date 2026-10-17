@@ -244,9 +244,11 @@ On the test split, windows of at least 80 Arabic letters:
 
 ## Roadmap
 
-- Per-font decoder for legacy and custom Arabic fonts: learn each font's glyph-to-letter
-  map once (from a typed edition of the same book, a library of known fonts, or the letter
-  model itself, with OCR only as a fallback), then decode the whole document.
+- Per-font decoder for legacy and custom Arabic fonts: learn each font family's
+  glyph-to-letter map once from a typed edition, then decode every book that uses it, with
+  no OCR. A prototype trained on 80 pages of one book reads three other books in the same
+  `AXt`/`Adv` font family at 70-87% word precision, level with or above archive.org's OCR
+  of the same pages ([`reports/decoder_prototype.md`](reports/decoder_prototype.md)).
 - Docling, LangChain and LlamaIndex integrations.
 - A public benchmark of broken Arabic PDFs with labels per failure class.
 
