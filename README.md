@@ -8,15 +8,10 @@
 </h1>
 
 <p align="center">
+  <a href="https://pypi.org/project/harfix/"><img alt="PyPI" src="https://img.shields.io/pypi/v/harfix?color=0F766E"></a>
+  <a href="https://pypi.org/project/harfix/"><img alt="Python" src="https://img.shields.io/python/required-version-toml?tomlFilePath=https%3A%2F%2Fraw.githubusercontent.com%2Fasebaq%2Fharfix%2Fmain%2Fpyproject.toml"></a>
   <a href="https://github.com/asebaq/harfix/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/asebaq/harfix/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="https://pypi.org/project/harfix/"><img alt="PyPI version" src="https://img.shields.io/pypi/v/harfix?color=0F766E"></a>
-  <a href="https://pypi.org/project/harfix/"><img alt="Python versions" src="https://img.shields.io/python/required-version-toml?tomlFilePath=https%3A%2F%2Fraw.githubusercontent.com%2Fasebaq%2Fharfix%2Fmain%2Fpyproject.toml"></a>
-  <a href="https://github.com/asebaq/harfix/blob/main/LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/github/license/asebaq/harfix"></a>
-  <br/>
-  <a href="https://github.com/astral-sh/ruff"><img alt="Ruff" src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json"></a>
-  <a href="https://github.com/astral-sh/uv"><img alt="uv" src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json"></a>
-  <img alt="Runtime dependency: pdfminer.six only" src="https://img.shields.io/badge/runtime%20deps-pdfminer.six-0F766E">
-  <img alt="Language: Arabic" src="https://img.shields.io/badge/language-Arabic-DFE0E5">
+  <a href="https://github.com/asebaq/harfix/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/asebaq/harfix"></a>
 </p>
 
 <p align="center">
