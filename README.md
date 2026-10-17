@@ -70,21 +70,43 @@ whole lines holding about 500 Arabic letters, so a few bad pages are not average
 
 ```console
 $ pdftotext -f 1 -l 12 al_mughalatat.pdf - | harfix check
-reextract: lam_alef_transposition, presentation_forms
-  pages: keep=2, repair=3, reextract=2
-  p4               repair    presentation_forms
-  p5               repair    presentation_forms
-  p6               reextract presentation_forms, lam_alef_transposition
-  p9               repair    presentation_forms
-  p11              reextract presentation_forms, lam_alef_transposition
+reextract: bidi_controls, lam_alef_transposition, presentation_forms
+  pages: repair=5, reextract=2
+  p3               repair    bidi_controls
+  p4               repair    bidi_controls, presentation_forms
+  p5               repair    bidi_controls, presentation_forms
+  p6               reextract bidi_controls, presentation_forms, lam_alef_transposition
+  p7               repair    bidi_controls
+  p9               repair    bidi_controls, presentation_forms
+  p11              reextract bidi_controls, presentation_forms, lam_alef_transposition
 ```
 
 Page numbers count from the start of the input; blank pages are skipped.
 
+Repair what is safe to repair. `harfix repair` changes only the pages `check` routes to
+`repair`, and only for the reasons found on them: it deletes bidi embedding marks and
+unmapped elongation glyphs, turns visual-order lines into logical order (numbers and Latin
+words keep their own order, brackets are mirrored), and decomposes presentation forms.
+Pages that need `reextract` or `ocr` are left untouched and listed:
+
+```console
+$ pdftotext -f 1 -l 12 al_mughalatat.pdf - | harfix repair -o repaired.txt
+repaired p3: bidi_controls (8 characters)
+repaired p4: bidi_controls (62 characters)
+repaired p4: presentation_forms (278 characters)
+repaired p5: bidi_controls (172 characters)
+repaired p5: presentation_forms (289 characters)
+repaired p7: bidi_controls (8 characters)
+repaired p9: bidi_controls (12 characters)
+repaired p9: presentation_forms (66 characters)
+not repaired p6: reextract (bidi_controls, presentation_forms, lam_alef_transposition)
+not repaired p11: reextract (bidi_controls, presentation_forms, lam_alef_transposition)
+```
+
 From Python:
 
 ```python
-from harfix import assess_document, assess_text, scan_pdf
+from harfix import assess_document, assess_text, repair_text, scan_pdf
 
 report = scan_pdf("book.pdf", pages=range(1, 11))
 for page in report.pages:
@@ -94,6 +116,9 @@ for page in report.pages:
 document = assess_document(extracted_text)  # extractor output, page by page
 document.route, [(s.page, s.assessment.route) for s in document.segments]
 
+fixed = repair_text(extracted_text)  # repaired text, a change log, unrepaired pages
+fixed.text, fixed.changes, fixed.unrepaired
+
 verdict = assess_text(snippet)  # one piece of text: checks reading order too
 ```
 
@@ -102,7 +127,7 @@ verdict = assess_text(snippet)  # one piece of text: checks reading order too
 | Route | Meaning | Reasons |
 |---|---|---|
 | `keep` | Index as is. | — |
-| `repair` | Text is right but encoded or ordered badly; a deterministic fix exists. | `presentation_forms` (apply NFKC), `visual_order` (reverse each line), `unmapped_elongation` (delete U+FFFD) |
+| `repair` | Text is right but encoded or ordered badly; a deterministic fix exists. | `presentation_forms` (apply NFKC), `visual_order` (reverse each line), `unmapped_elongation` (delete U+FFFD), `bidi_controls` (delete embedding marks) |
 | `reextract` | The extractor damaged correct source text; try another extractor. | `mixed_reading_order`, `lam_alef_transposition`, `lost_word_boundaries` |
 | `ocr` | The text layer itself is wrong; read the pixels. | `same_script_substitution`, `unmapped_glyphs`, `legacy_encoding`, `quran_glyph_codes`, `no_text_layer` |
 
@@ -164,6 +189,20 @@ punctuation, and U+FFFD elongation glyphs inside otherwise intact words (now `re
 instead of `ocr`). Samples of two test books had been looked at before the split, so
 the test numbers are close to, but not strictly, held out.
 
+### Repair
+
+Full numbers: [`reports/repair.md`](reports/repair.md). On the same Shamela PDFs, every
+page `harfix repair` changed is scored by the share of its Arabic words a plain search
+index would match in Shamela's transcriptions (only diacritics and tatweel removed):
+
+| Extractor | Pages repaired | Median match before | Median match after | Pages worse |
+|---|---:|---:|---:|---:|
+| pdfminer.six (mostly visual order) | 453 | 20.0% | 90.3% | 0 |
+| pdftotext (bidi marks, presentation forms, elongation glyphs) | 562 | 25.4% | 92.0% | 0 |
+
+The bidi embedding marks pdftotext inserts sit on about half of its pages in this sample
+and stick to the neighbouring words, so they alone hide many words from a search index.
+
 ### Synthetic corruptions
 
 Full numbers: [`reports/calibration.md`](reports/calibration.md). Thresholds were fitted on
@@ -205,7 +244,6 @@ On the test split, windows of at least 80 Arabic letters:
 
 ## Roadmap
 
-- Text-level repairs for the `repair` route (NFKC, line reversal) with provenance.
 - Per-font decoder for legacy and custom Arabic fonts: learn each font's glyph-to-letter
   map once (from a typed edition of the same book, a library of known fonts, or the letter
   model itself, with OCR only as a fallback), then decode the whole document.
@@ -224,6 +262,7 @@ uv run python scripts/calibrate.py --pages 1-40 --pdf corpus/shamela/*.pdf
 uv run python scripts/fetch_shamela.py --out corpus/shamela_text --per-category 6 --text-only
 uv run python scripts/benchmark.py fetch-text   # Shamela transcriptions, about 80 minutes
 uv run python scripts/benchmark.py run
+uv run python scripts/benchmark.py repair       # search matches before/after repair
 ```
 
 The Shamela PDFs and transcriptions are third-party works: keep them local, never commit

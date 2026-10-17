@@ -1,4 +1,4 @@
-"""`harfix scan` for PDFs and `harfix check` for text produced by any extractor."""
+"""`harfix scan` for PDFs, `harfix check` and `harfix repair` for extracted text."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .detect import ROUTES, assess_document
 from .pdf import HarfixError, scan_pdf
+from .repair import repair_text
 
 
 def _parse_pages(spec: str) -> list[int]:
@@ -97,6 +98,32 @@ def _check(args: argparse.Namespace) -> int:
     return 1 if _fails(report.route, args.fail_on) else 0
 
 
+def _where(page: int | None, start: int, end: int) -> str:
+    return f"p{page}" if page is not None else f"lines {start}-{end}"
+
+
+def _repair(args: argparse.Namespace) -> int:
+    text = sys.stdin.read() if args.file == "-" else Path(args.file).read_text(encoding="utf-8")
+    result = repair_text(text)
+    if args.json:
+        json.dump(result.to_dict(), sys.stdout, ensure_ascii=False, indent=2)
+        print()
+    elif args.output:
+        Path(args.output).write_text(result.text, encoding="utf-8")
+    else:
+        sys.stdout.write(result.text)
+    if not args.json:
+        for c in result.changes:
+            unit = "lines" if c.reason == "visual_order" else "characters"
+            where = _where(c.page, c.start_line, c.end_line)
+            print(f"repaired {where}: {c.reason} ({c.count} {unit})", file=sys.stderr)
+        for s in result.unrepaired:
+            where = _where(s.page, s.start_line, s.end_line)
+            reasons = ", ".join(s.assessment.reasons)
+            print(f"not repaired {where}: {s.assessment.route} ({reasons})", file=sys.stderr)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="harfix", description="Quality gate for Arabic text extracted from PDFs."
@@ -125,6 +152,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--fail-on", choices=ROUTES[1:], help="exit 1 if any segment needs this route or worse"
     )
     check.set_defaults(func=_check)
+
+    repair = sub.add_parser(
+        "repair", help="apply the safe fixes for text that `check` routes to repair"
+    )
+    repair.add_argument("file", nargs="?", default="-", help="UTF-8 text file, or - for stdin")
+    repair.add_argument("-o", "--output", help="write the repaired text here instead of stdout")
+    repair.add_argument(
+        "--json", action="store_true", help="print text, changes and unrepaired segments"
+    )
+    repair.set_defaults(func=_repair)
     return parser
 
 

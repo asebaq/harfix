@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.0
+
+- `harfix repair` and `repair_text()`: apply the safe fixes to pages `check` routes to
+  `repair` (delete bidi marks and unmapped elongation glyphs, turn visual-order lines into
+  logical order with numbers, Latin words and brackets kept right, decompose presentation
+  forms), log every change, and list pages that still need `reextract` or `ocr`.
+- New reason `bidi_controls` (route `repair`): bidi embedding marks, which pdftotext
+  inserts on about half of its Arabic pages and which stick to the neighbouring words.
+- `scripts/benchmark.py repair` and `reports/repair.md`: on Shamela PDFs, the share of
+  words a plain search index matches rose from 20% to 90% (pdfminer.six) and from 25% to
+  92% (pdftotext) on the pages repaired, with no page worse.
+
 ## 0.1.1
 
 - New reason `unmapped_elongation` (route `repair`): U+FFFD only inside words that read

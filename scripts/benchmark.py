@@ -3,6 +3,7 @@
 Usage:
     uv run python scripts/benchmark.py fetch-text   # typed text from shamela.ws, resumable
     uv run python scripts/benchmark.py run          # label, scan, score
+    uv run python scripts/benchmark.py repair       # search matches before/after repair
 
 Shamela's typed text of a book is a transcription of the same printed edition as the PDF it
 links. A PDF font run made of real words has the right letters; a run that is not has a
@@ -37,6 +38,9 @@ import hashlib
 import html
 import json
 import re
+import shutil
+import statistics
+import subprocess
 import time
 import urllib.error
 import urllib.request
@@ -49,7 +53,7 @@ from pdfminer.pdfdocument import PDFDocument
 from pdfminer.pdfpage import PDFPage
 from pdfminer.pdfparser import PDFParser
 
-from harfix import HarfixError, scan_pdf
+from harfix import HarfixError, repair_text, scan_pdf
 from harfix.normalize import letters_only
 from harfix.pdf import _collect_page
 
@@ -421,9 +425,88 @@ def run(manifest: Path, words_file: Path | None) -> None:
     print(report)
 
 
+# ---------------------------------------------------------------- repair
+
+_TASHKEEL = re.compile(r"[\u064B-\u0652\u0670\u0640]")
+
+
+def _search_tokens(text: str) -> list[str]:
+    """Arabic tokens as a plain search index sees them: only diacritics and tatweel go."""
+    tokens = (_TASHKEEL.sub("", raw.strip(_EDGES)) for raw in text.split())
+    return [t for t in tokens if len(t) >= 2 and _ARABIC.search(t)]
+
+
+def _extractors() -> dict[str, callable]:
+    from pdfminer.high_level import extract_text
+
+    extractors = {"pdfminer.six": lambda pdf: extract_text(str(pdf), maxpages=PAGES_PER_BOOK)}
+    if shutil.which("pdftotext"):
+        extractors["pdftotext"] = lambda pdf: (
+            subprocess.run(
+                ["pdftotext", "-l", str(PAGES_PER_BOOK), str(pdf), "-"],
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout
+        )
+    return extractors
+
+
+def measure_repair(manifest: Path) -> None:
+    """Share of words a plain search index would match in the transcriptions, before and
+    after `repair_text`, on every page the repair changed."""
+    texts = sorted((manifest.parent / "text").glob("*.jsonl"))
+    vocab = {
+        token
+        for p in texts
+        for line in p.open(encoding="utf-8")
+        for token in _search_tokens(json.loads(line)["text"])
+    }
+
+    def share(text: str) -> float | None:
+        tokens = _search_tokens(text)
+        return sum(t in vocab for t in tokens) / len(tokens) if tokens else None
+
+    lines = [
+        "# harfix repair: Shamela books",
+        "",
+        f"Generated {dt.date.today().isoformat()} by `scripts/benchmark.py repair`.",
+        "",
+        "Each PDF's first pages are extracted, passed through `repair_text`, and every page it",
+        "changed is scored before and after: the share of its Arabic words (diacritics and",
+        "tatweel removed, nothing else normalized, as a plain search index would see them)",
+        "that occur in Shamela's typed transcriptions.",
+        "",
+        "| Extractor | Pages repaired | Reasons | Median share before | Median share after "
+        "| Pages worse |",
+        "|---|---:|---|---:|---:|---:|",
+    ]
+    for name, extract in _extractors().items():
+        before_after, reasons = [], Counter()
+        for pdf in _pdfs(manifest):
+            text = extract(manifest.parent / pdf["file"])
+            result = repair_text(text)
+            reasons.update(c.reason for c in result.changes)
+            old, new = text.split("\f"), result.text.split("\f")
+            for page in sorted({c.page for c in result.changes}):
+                b, a = share(old[page - 1]), share(new[page - 1])
+                if b is not None and a is not None:
+                    before_after.append((b, a))
+        worse = sum(1 for b, a in before_after if a < b - 0.01)
+        lines.append(
+            f"| {name} | {len(before_after)} | "
+            + ", ".join(f"`{r}` {n}" for r, n in reasons.most_common())
+            + f" | {pct(statistics.median(b for b, _ in before_after))} | "
+            f"{pct(statistics.median(a for _, a in before_after))} | {worse} |"
+        )
+        print(lines[-1])
+    lines.append("")
+    (ROOT / "reports" / "repair.md").write_text("\n".join(lines), encoding="utf-8")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["fetch-text", "run"])
+    parser.add_argument("command", choices=["fetch-text", "run", "repair"])
     parser.add_argument(
         "--manifest", type=Path, default=ROOT / "corpus" / "shamela_text" / "manifest.jsonl"
     )
@@ -436,6 +519,8 @@ def main() -> None:
     args = parser.parse_args()
     if args.command == "fetch-text":
         fetch_text(args.manifest)
+    elif args.command == "repair":
+        measure_repair(args.manifest)
     else:
         run(args.manifest, args.words if args.words.is_file() else None)
 

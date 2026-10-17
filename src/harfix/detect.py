@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass, field
 from functools import lru_cache
 from importlib import resources
 
-from .model import ModelPair, default_models
+from .model import CharLM, ModelPair, default_models
 from .normalize import BOUNDARY, drop_ligature_forms, letters_only, profile, strip_decorations
 
 # Ordered from least to most severe; a page takes the most severe route of its parts.
@@ -54,6 +54,8 @@ class Thresholds:
     quran_consecutive_share: float = 0.5
     transposition_ratio: float = 0.27
     mixed_order_min_share: float = 0.2
+    # Bidi formatting characters (embedding marks): invisible, but they stick to words.
+    bidi_min_controls: int = 3
 
     @classmethod
     def from_dict(cls, data: dict) -> Thresholds:
@@ -82,6 +84,20 @@ class Measurements:
     decoration_runs: int
 
 
+def line_direction(letters: str, model: CharLM, margin: float) -> bool | None:
+    """True if a line of base letters reads better backwards (visual order), False if
+    forwards, None if it is too short or too close to call."""
+    if len(letters.replace(BOUNDARY, "")) < _MIN_LINE_LETTERS:
+        return None
+    forward, _ = model.bits_per_char(letters)
+    backward, _ = model.bits_per_char(letters[::-1])
+    if forward - backward > margin:
+        return True
+    if backward - forward > margin:
+        return False
+    return None
+
+
 def measure(text: str, models: ModelPair, thresholds: Thresholds) -> Measurements:
     """Model-based measurements of `text` after correcting each line's reading direction."""
     model = models.spaced
@@ -92,24 +108,15 @@ def measure(text: str, models: ModelPair, thresholds: Thresholds) -> Measurement
         decoration_runs += runs
         if line:
             lines.append(line)
-    decisions: list[bool | None] = []  # True = visual (reversed) line
-    visual_letters = logical_letters = 0
-    for line in lines:
-        n = len(line.replace(BOUNDARY, ""))
-        if n < _MIN_LINE_LETTERS:
-            decisions.append(None)
-            continue
-        forward, _ = model.bits_per_char(line)
-        backward, _ = model.bits_per_char(line[::-1])
-        if forward - backward > margin:
-            decisions.append(True)
-            visual_letters += n
-        elif backward - forward > margin:
-            decisions.append(False)
-            logical_letters += n
-        else:
-            decisions.append(None)
-
+    decisions = [line_direction(line, model, margin) for line in lines]  # True = visual
+    visual_letters = sum(
+        len(line.replace(BOUNDARY, "")) for line, d in zip(lines, decisions, strict=True) if d
+    )
+    logical_letters = sum(
+        len(line.replace(BOUNDARY, ""))
+        for line, d in zip(lines, decisions, strict=True)
+        if d is False
+    )
     if visual_letters or logical_letters:
         document_visual = visual_letters > logical_letters
         orientation = "visual" if document_visual else "logical"
@@ -223,6 +230,8 @@ def assess_text(
     )
     if prof.arabic_ratio < 0.2 and (symbol_legacy or ascii_legacy or digit_legacy):
         flag("legacy_encoding", "ocr")
+    if prof.bidi_controls >= t.bidi_min_controls:
+        flag("bidi_controls", "repair")
     if (
         prof.presentation_forms >= t.quran_min_forms
         and prof.ligature_form_share > t.quran_ligature_share

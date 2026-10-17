@@ -38,6 +38,7 @@ statute PDFs are not flagged.
 | `quran_consecutive_share` | 0.5 | 0.5 |
 | `transposition_ratio` | 0.27 | 0.27 |
 | `mixed_order_min_share` | 0.2 | 0.2 |
+| `bidi_min_controls` | 3 | 3 |
 
 ## Detection on the test split
 
@@ -49,11 +50,11 @@ For `clean` and `visual order` in scan mode the rate is the share left as `keep`
 
 | Case | Windows | Expected (scan) | scan | Expected (text) | text | text: any flag |
 |---|---:|---|---:|---|---:|---:|
-| clean | 416 | keep | 100.0% | keep | 99.5% | 0.5% |
-| visual order | 416 | keep | 100.0% | visual_order | 100.0% | 100.0% |
+| clean | 416 | keep | 99.3% | keep | 98.8% | 1.2% |
+| visual order | 416 | keep | 99.3% | visual_order | 100.0% | 100.0% |
 | all letters substituted | 416 | same_script_substitution | 100.0% | same_script_substitution | 100.0% | 100.0% |
-| 6 letters substituted | 416 | same_script_substitution | 40.4% | same_script_substitution | 40.4% | 40.9% |
-| meem insertion | 416 | same_script_substitution | 72.1% | same_script_substitution | 71.9% | 73.1% |
+| 6 letters substituted | 416 | same_script_substitution | 40.4% | same_script_substitution | 40.4% | 41.3% |
+| meem insertion | 416 | same_script_substitution | 72.1% | same_script_substitution | 71.9% | 73.6% |
 | private-use glyphs | 416 | unmapped_glyphs | 100.0% | unmapped_glyphs | 100.0% | 100.0% |
 | raw CID codes | 416 | unmapped_glyphs | 100.0% | unmapped_glyphs | 100.0% | 100.0% |
 | legacy encoding | 416 | legacy_encoding | 100.0% | legacy_encoding | 100.0% | 100.0% |
@@ -69,11 +70,11 @@ For `clean` and `visual order` in scan mode the rate is the share left as `keep`
 
 | Case | Windows | Expected (scan) | scan | Expected (text) | text | text: any flag |
 |---|---:|---|---:|---|---:|---:|
-| clean | 222 | keep | 100.0% | keep | 99.5% | 0.5% |
-| visual order | 222 | keep | 100.0% | visual_order | 100.0% | 100.0% |
+| clean | 222 | keep | 98.6% | keep | 98.2% | 1.8% |
+| visual order | 222 | keep | 98.6% | visual_order | 100.0% | 100.0% |
 | all letters substituted | 222 | same_script_substitution | 100.0% | same_script_substitution | 100.0% | 100.0% |
-| 6 letters substituted | 222 | same_script_substitution | 50.0% | same_script_substitution | 50.0% | 50.9% |
-| meem insertion | 222 | same_script_substitution | 77.5% | same_script_substitution | 77.5% | 77.9% |
+| 6 letters substituted | 222 | same_script_substitution | 50.0% | same_script_substitution | 50.0% | 51.8% |
+| meem insertion | 222 | same_script_substitution | 77.5% | same_script_substitution | 77.5% | 78.4% |
 | private-use glyphs | 222 | unmapped_glyphs | 100.0% | unmapped_glyphs | 100.0% | 100.0% |
 | raw CID codes | 222 | unmapped_glyphs | 100.0% | unmapped_glyphs | 100.0% | 100.0% |
 | legacy encoding | 222 | legacy_encoding | 100.0% | legacy_encoding | 100.0% | 100.0% |
@@ -89,10 +90,10 @@ For `clean` and `visual order` in scan mode the rate is the share left as `keep`
 
 | Case | Windows | Expected (scan) | scan | Expected (text) | text | text: any flag |
 |---|---:|---|---:|---|---:|---:|
-| clean | 96 | keep | 100.0% | keep | 99.0% | 1.0% |
-| visual order | 96 | keep | 100.0% | visual_order | 100.0% | 100.0% |
+| clean | 96 | keep | 96.9% | keep | 95.8% | 4.2% |
+| visual order | 96 | keep | 96.9% | visual_order | 100.0% | 100.0% |
 | all letters substituted | 96 | same_script_substitution | 100.0% | same_script_substitution | 100.0% | 100.0% |
-| 6 letters substituted | 96 | same_script_substitution | 52.1% | same_script_substitution | 52.1% | 52.1% |
+| 6 letters substituted | 96 | same_script_substitution | 52.1% | same_script_substitution | 52.1% | 54.2% |
 | meem insertion | 96 | same_script_substitution | 86.5% | same_script_substitution | 86.5% | 86.5% |
 | private-use glyphs | 96 | unmapped_glyphs | 100.0% | unmapped_glyphs | 100.0% | 100.0% |
 | raw CID codes | 96 | unmapped_glyphs | 100.0% | unmapped_glyphs | 100.0% | 100.0% |

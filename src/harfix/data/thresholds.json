@@ -23,7 +23,8 @@
     "quran_short_run_share": 0.6,
     "quran_consecutive_share": 0.5,
     "transposition_ratio": 0.27,
-    "mixed_order_min_share": 0.2
+    "mixed_order_min_share": 0.2,
+    "bidi_min_controls": 3
   },
   "calibration": {
     "date": "2026-10-18",

@@ -216,6 +216,55 @@ def _symbol_words(text: str) -> tuple[int, int]:
     return plain, symbols
 
 
+def drop_inner_replacement(text: str) -> tuple[str, int]:
+    """Delete U+FFFD that sits between Arabic letters; return the text and how many."""
+    count = 0
+
+    def drop(match: re.Match) -> str:
+        nonlocal count
+        count += len(match.group())
+        return ""
+
+    return _INNER_REPLACEMENT.sub(drop, text), count
+
+
+def decompose_presentation_forms(text: str) -> tuple[str, int]:
+    """NFKC only on Arabic presentation forms; return the text and how many were changed."""
+    count = 0
+    out = []
+    for ch in text:
+        if ch in _FORMS:
+            count += 1
+            # A few isolated-diacritic forms decompose with a leading space; drop it.
+            out.append(unicodedata.normalize("NFKC", ch).lstrip(" "))
+        else:
+            out.append(ch)
+    return "".join(out), count
+
+
+_BIDI_RUN = re.compile("[" + re.escape("".join(sorted(_BIDI_CONTROLS))) + "]+")
+
+
+def drop_bidi_controls(text: str) -> tuple[str, int]:
+    """Delete Unicode bidi formatting characters; return the text and how many.
+
+    Extractors such as pdftotext wrap script changes in embedding marks. Where a run of
+    them sat between two visible characters (`كلمةhindawi`), a space keeps the words apart.
+    """
+    count = 0
+
+    def drop(match: re.Match) -> str:
+        nonlocal count
+        count += len(match.group())
+        start, end = match.start(), match.end()
+        between = 0 < start and end < len(text)
+        if between and not text[start - 1].isspace() and not text[end].isspace():
+            return " "
+        return ""
+
+    return _BIDI_RUN.sub(drop, text), count
+
+
 def _latin_words(text: str) -> tuple[int, int]:
     words = irregular = 0
     for raw in text.split():
