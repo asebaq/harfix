@@ -16,6 +16,8 @@
     "latin_min_words": 15,
     "latin_vowel_ratio": 0.25,
     "latin_irregular_ratio": 0.3,
+    "symbol_min_words": 8,
+    "symbol_word_ratio": 0.4,
     "quran_min_forms": 8,
     "quran_ligature_share": 0.5,
     "quran_short_run_share": 0.6,

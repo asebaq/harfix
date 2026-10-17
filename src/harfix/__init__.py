@@ -27,4 +27,4 @@ __all__ = [
     "assess_text",
     "scan_pdf",
 ]
-__version__ = "0.1.0"
+__version__ = "0.1.1"

@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import html
 import json
 import re
@@ -260,8 +261,6 @@ def pct(x: float | None) -> str:
 def write_report(results: list[dict], skipped: list[str]) -> str:
     page_pairs = [(p["label"], p["route"]) for r in results for p in r["pages"]]
     font_pairs = [(f["label"], f["route"]) for r in results for p in r["pages"] for f in p["fonts"]]
-    pages = confusion(page_pairs)
-    fonts = confusion(font_pairs)
     page_labels = Counter(label for label, _ in page_pairs)
     font_labels = Counter(label for label, _ in font_pairs if label != "unlabelled")
 
@@ -303,15 +302,33 @@ def write_report(results: list[dict], skipped: list[str]) -> str:
         "",
         "## harfix against the labels (clean and broken only)",
         "",
-        "| Unit | Flagged broken | Flagged clean | Missed broken | Kept clean | "
+        "Books are split by a hash of the PDF into `dev` (used when changing harfix rules) and",
+        "`test` (not looked at when changing rules). `all` is both.",
+        "",
+        "| Split | Unit | Flagged broken | Flagged clean | Missed broken | Kept clean | "
         "Precision | Recall |",
-        "|---|---:|---:|---:|---:|---:|---:|",
+        "|---|---|---:|---:|---:|---:|---:|---:|",
     ]
-    for name, m in (("pages", pages), ("font runs", fonts)):
-        lines.append(
-            f"| {name} | {m['tp']} | {m['fp']} | {m['fn']} | {m['tn']} | "
-            f"{pct(m['precision'])} | {pct(m['recall'])} |"
-        )
+    for split in ("dev", "test", "all"):
+        chosen = [r for r in results if split in ("all", r["split"])]
+        for name, m in (
+            ("pages", confusion([(p["label"], p["route"]) for r in chosen for p in r["pages"]])),
+            (
+                "font runs",
+                confusion(
+                    [
+                        (f["label"], f["route"])
+                        for r in chosen
+                        for p in r["pages"]
+                        for f in p["fonts"]
+                    ]
+                ),
+            ),
+        ):
+            lines.append(
+                f"| {split} | {name} | {m['tp']} | {m['fp']} | {m['fn']} | {m['tn']} | "
+                f"{pct(m['precision'])} | {pct(m['recall'])} |"
+            )
     lines += [
         "",
         "## Flagged font runs by reason",
@@ -325,16 +342,17 @@ def write_report(results: list[dict], skipped: list[str]) -> str:
         "",
         "## Per book",
         "",
-        "| Shamela id | Pages | Labels (clean/broken/partial/unverified/unlabelled) | Flagged | "
-        "Precision | Recall |",
-        "|---:|---:|---|---:|---:|---:|",
+        "| Shamela id | Split | Pages | Labels (clean/broken/partial/unverified/unlabelled) | "
+        "Flagged | Precision | Recall |",
+        "|---:|---|---:|---|---:|---:|---:|",
     ]
     for r in results:
         labels = Counter(p["label"] for p in r["pages"])
         m = confusion([(p["label"], p["route"]) for p in r["pages"]])
         flagged = sum(1 for p in r["pages"] if p["route"] in FLAGGED)
         lines.append(
-            f"| {r['book_id']} | {len(r['pages'])} | {labels['clean']}/{labels['broken']}/"
+            f"| {r['book_id']} | {r['split']} | {len(r['pages'])} | "
+            f"{labels['clean']}/{labels['broken']}/"
             f"{labels['partial']}/{labels['unverified']}/{labels['unlabelled']} | {flagged} | "
             f"{pct(m['precision'])} | {pct(m['recall'])} |"
         )
@@ -352,6 +370,12 @@ def write_report(results: list[dict], skipped: list[str]) -> str:
     return "\n".join(lines)
 
 
+def split_of(book: dict) -> str:
+    """Stable dev/test assignment from the PDF's content hash."""
+    bucket = int(hashlib.sha256(book["sha256"].encode()).hexdigest()[:8], 16)
+    return "dev" if bucket % 2 == 0 else "test"
+
+
 def _books(manifest: Path) -> list[dict]:
     return [json.loads(line) for line in manifest.open(encoding="utf-8")]
 
@@ -362,7 +386,10 @@ def _pdfs(manifest: Path) -> list[dict]:
     groups: dict[str, dict] = {}
     for book in _books(manifest):
         if book.get("text_layer", True):
-            groups.setdefault(book["sha256"], {"file": book["file"], "book_ids": book["pdf_books"]})
+            groups.setdefault(
+                book["sha256"],
+                {"file": book["file"], "book_ids": book["pdf_books"], "split": split_of(book)},
+            )
     return list(groups.values())
 
 
@@ -382,7 +409,7 @@ def run(manifest: Path, words_file: Path | None) -> None:
             print(f"{key}: {error}")
             skipped.append(key)
             continue
-        results.append({"book_id": key, **result})
+        results.append({"book_id": key, "split": pdf["split"], **result})
         print(f"{key}: {len(result['pages'])} pages")
 
     (manifest.parent / "benchmark_runs.json").write_text(

@@ -44,6 +44,9 @@ class Thresholds:
     latin_min_words: int = 15
     latin_vowel_ratio: float = 0.25
     latin_irregular_ratio: float = 0.3
+    # Pre-Unicode Arabic fonts mapped onto ASCII digits and punctuation only.
+    symbol_min_words: int = 8
+    symbol_word_ratio: float = 0.4
     # Quran glyph fonts: one Presentation Forms-A code point per word, numbered in order.
     quran_min_forms: int = 8
     quran_ligature_share: float = 0.5
@@ -201,15 +204,24 @@ def assess_text(
         if ROUTES.index(new_route) > ROUTES.index(route):
             route = new_route
 
-    # All three are visible even when too few Arabic letters survive to score.
+    # These are visible even when too few Arabic letters survive to score.
+    elongation = False
     if prof.unmapped >= t.unmapped_min_glyphs and prof.unmapped_ratio > t.unmapped_ratio:
-        flag("unmapped_glyphs", "ocr")
+        if prof.unmapped == prof.replacement == prof.inner_replacement:
+            # Every unmapped glyph sits inside a word: judge the words without them below.
+            elongation = True
+            text = text.replace("\ufffd", "")
+        else:
+            flag("unmapped_glyphs", "ocr")
     symbol_legacy = prof.visible >= t.legacy_min_visible and prof.legacy_ratio > t.legacy_ratio
     ascii_legacy = prof.latin_words >= t.latin_min_words and (
         prof.latin_vowel_ratio < t.latin_vowel_ratio
         or prof.irregular_latin_word_ratio > t.latin_irregular_ratio
     )
-    if prof.arabic_ratio < 0.2 and (symbol_legacy or ascii_legacy):
+    digit_legacy = (
+        prof.symbol_words >= t.symbol_min_words and prof.symbol_word_ratio > t.symbol_word_ratio
+    )
+    if prof.arabic_ratio < 0.2 and (symbol_legacy or ascii_legacy or digit_legacy):
         flag("legacy_encoding", "ocr")
     if (
         prof.presentation_forms >= t.quran_min_forms
@@ -224,6 +236,15 @@ def assess_text(
 
     m = measure(text, models, t)
     metrics["arabic_letters"] = m.letters
+    spiky = m.letters >= t.spike_min_letters and m.spike_rate > t.spike_rate
+    implausible = m.letters >= t.min_letters and (m.bits > t.substitution_bits or spiky)
+    if elongation:
+        if m.letters >= t.min_letters and not implausible:
+            # The words read correctly once the unmapped glyphs are gone: they were
+            # elongation (kashida) glyphs, and deleting them is a safe repair.
+            flag("unmapped_elongation", "repair")
+        else:
+            flag("unmapped_glyphs", "ocr")
     if m.letters < t.min_letters:
         if not reasons:
             reasons.append("insufficient_arabic_text")
@@ -237,8 +258,6 @@ def assess_text(
         short_token_ratio=round(m.short_token_ratio, 4),
         decoration_runs=m.decoration_runs,
     )
-    spiky = m.letters >= t.spike_min_letters and m.spike_rate > t.spike_rate
-    implausible = m.bits > t.substitution_bits or spiky
     # Only meaningful for an extractor's final output. In a raw text-layer scan the spacing
     # comes from harfix's own extraction, so implausible text is treated as wrong letters.
     spacing_only = (

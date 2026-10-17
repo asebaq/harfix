@@ -1,12 +1,18 @@
 # Changelog
 
-## Unreleased
+## 0.1.1
 
+- New reason `unmapped_elongation` (route `repair`): U+FFFD only inside words that read
+  correctly without it, as when elongation (kashida) glyphs have no Unicode mapping.
+  Such text was sent to `ocr` before.
+- `legacy_encoding` also catches pre-Unicode fonts mapped onto ASCII digits and
+  punctuation (`0)#`, `-!/!1-!/`), not only onto letters or Latin-1 symbols.
 - Fixed: ornate parentheses ﴾﴿ around Quran quotations were counted as presentation forms,
   so pages quoting many verses could be flagged `quran_glyph_codes`. Only characters that
   NFKC decomposes into letters now count as presentation forms.
-- Added a real-book benchmark (`scripts/benchmark.py`, `reports/benchmark.md`): 57 PDFs
-  linked from al-Maktaba al-Shamela, labelled from Shamela's typed transcriptions.
+- Real-book benchmark (`scripts/benchmark.py`, `reports/benchmark.md`): 57 PDFs linked
+  from al-Maktaba al-Shamela, labelled from Shamela's typed transcriptions, split into
+  dev and test books.
 - README: logo and badges.
 
 ## 0.1.0

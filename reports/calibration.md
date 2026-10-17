@@ -30,6 +30,8 @@ statute PDFs are not flagged.
 | `latin_min_words` | 15 | 15 |
 | `latin_vowel_ratio` | 0.25 | 0.25 |
 | `latin_irregular_ratio` | 0.3 | 0.3 |
+| `symbol_min_words` | 8 | 8 |
+| `symbol_word_ratio` | 0.4 | 0.4 |
 | `quran_min_forms` | 8 | 8 |
 | `quran_ligature_share` | 0.5 | 0.5 |
 | `quran_short_run_share` | 0.6 | 0.6 |
@@ -56,6 +58,8 @@ For `clean` and `visual order` in scan mode the rate is the share left as `keep`
 | raw CID codes | 416 | unmapped_glyphs | 100.0% | unmapped_glyphs | 100.0% | 100.0% |
 | legacy encoding | 416 | legacy_encoding | 100.0% | legacy_encoding | 100.0% | 100.0% |
 | ASCII legacy encoding | 416 | legacy_encoding | 96.4% | legacy_encoding | 96.4% | 96.4% |
+| digit legacy encoding | 416 | legacy_encoding | 92.5% | legacy_encoding | 92.5% | 92.5% |
+| unmapped elongation | 416 | unmapped_elongation | 97.4% | unmapped_elongation | 97.4% | 97.4% |
 | Quran glyph codes | 416 | quran_glyph_codes | 100.0% | quran_glyph_codes | 100.0% | 100.0% |
 | presentation forms | 416 | presentation_forms | 100.0% | presentation_forms | 100.0% | 100.0% |
 | lam-alef transposition | 416 | - | n/a | lam_alef_transposition | 90.1% | 90.1% |
@@ -74,6 +78,8 @@ For `clean` and `visual order` in scan mode the rate is the share left as `keep`
 | raw CID codes | 222 | unmapped_glyphs | 100.0% | unmapped_glyphs | 100.0% | 100.0% |
 | legacy encoding | 222 | legacy_encoding | 100.0% | legacy_encoding | 100.0% | 100.0% |
 | ASCII legacy encoding | 222 | legacy_encoding | 99.5% | legacy_encoding | 99.5% | 99.5% |
+| digit legacy encoding | 222 | legacy_encoding | 92.8% | legacy_encoding | 92.8% | 92.8% |
+| unmapped elongation | 222 | unmapped_elongation | 100.0% | unmapped_elongation | 100.0% | 100.0% |
 | Quran glyph codes | 222 | quran_glyph_codes | 100.0% | quran_glyph_codes | 100.0% | 100.0% |
 | presentation forms | 222 | presentation_forms | 100.0% | presentation_forms | 100.0% | 100.0% |
 | lam-alef transposition | 222 | - | n/a | lam_alef_transposition | 97.3% | 97.3% |
@@ -92,6 +98,8 @@ For `clean` and `visual order` in scan mode the rate is the share left as `keep`
 | raw CID codes | 96 | unmapped_glyphs | 100.0% | unmapped_glyphs | 100.0% | 100.0% |
 | legacy encoding | 96 | legacy_encoding | 100.0% | legacy_encoding | 100.0% | 100.0% |
 | ASCII legacy encoding | 96 | legacy_encoding | 100.0% | legacy_encoding | 100.0% | 100.0% |
+| digit legacy encoding | 96 | legacy_encoding | 92.7% | legacy_encoding | 92.7% | 92.7% |
+| unmapped elongation | 96 | unmapped_elongation | 100.0% | unmapped_elongation | 100.0% | 100.0% |
 | Quran glyph codes | 96 | quran_glyph_codes | 100.0% | quran_glyph_codes | 100.0% | 100.0% |
 | presentation forms | 96 | presentation_forms | 100.0% | presentation_forms | 100.0% | 100.0% |
 | lam-alef transposition | 96 | - | n/a | lam_alef_transposition | 97.9% | 97.9% |
@@ -166,6 +174,7 @@ Not used for any threshold. Per-font summary of runs with enough Arabic text to 
 | BHQZCA+MCSTaybahS_Unormal. | 34 | 0 | None | ocr=34 |
 | AKAKYG+SimplifiedArabic | 34 | 0 | None | ocr=34 |
 | ASJHLP+AGAArabesque (short runs, pooled) | 17 | 0 | None | ocr=17 |
+| ACEKWL+HeshamNormal (short runs, pooled) | 16 | 0 | None | ocr=16 |
 | APFNBY+SimplifiedArabic,Bold | 13 | 0 | None | ocr=13 |
 | ASJHLP+AGAArabesque | 2 | 0 | None | ocr=2 |
 
@@ -320,9 +329,11 @@ Not used for any threshold. Per-font summary of runs with enough Arabic text to 
 | AAALMJ+Adv.QAL603 (short runs, pooled) | 31 | 0 | None | ocr=31 |
 | AAALMH+Font158 | 22 | 0 | None | ocr=22 |
 | AAALMF+Adv_FloraLa | 25 | 0 | None | ocr=25 |
+| AAALMG+Font159 | 17 | 0 | None | ocr=17 |
 | AAALML+Adv_Lots_Ba | 1 | 0 | None | ocr=1 |
 | AAALNC+Font143 (short runs, pooled) | 17 | 0 | None | ocr=17 |
 | AAALND+Adv_FloraBa (short runs, pooled) | 17 | 0 | None | ocr=17 |
+| AAALNE+Font144 (short runs, pooled) | 17 | 0 | None | ocr=17 |
 | AAALMF+Adv_FloraLa (short runs, pooled) | 3 | 0 | None | ocr=3 |
 | AAALMH+Font158 (short runs, pooled) | 6 | 0 | None | ocr=6 |
 

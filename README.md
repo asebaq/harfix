@@ -102,7 +102,7 @@ verdict = assess_text(snippet)  # one piece of text: checks reading order too
 | Route | Meaning | Reasons |
 |---|---|---|
 | `keep` | Index as is. | — |
-| `repair` | Text is right but encoded or ordered badly; a deterministic fix exists. | `presentation_forms` (apply NFKC), `visual_order` (reverse each line) |
+| `repair` | Text is right but encoded or ordered badly; a deterministic fix exists. | `presentation_forms` (apply NFKC), `visual_order` (reverse each line), `unmapped_elongation` (delete U+FFFD) |
 | `reextract` | The extractor damaged correct source text; try another extractor. | `mixed_reading_order`, `lam_alef_transposition`, `lost_word_boundaries` |
 | `ocr` | The text layer itself is wrong; read the pixels. | `same_script_substitution`, `unmapped_glyphs`, `legacy_encoding`, `quran_glyph_codes`, `no_text_layer` |
 
@@ -149,19 +149,20 @@ not from harfix: a font run is `broken` when at most 35% of its words exist in t
 transcriptions (or an English word list) and `clean` from 75% up. No OCR is involved. Of
 24 labelled runs checked by hand, 23 matched their label and one was borderline.
 
+The books are split by a hash of the PDF into 32 `dev` books, used when changing rules,
+and 25 `test` books. On the test split:
+
 | Unit | Precision | Recall | Labelled clean / broken |
 |---|---:|---:|---:|
-| Pages | 98.7% | 99.8% | 412 / 1,162 |
-| Font runs | 97.7% | 95.7% | 815 / 1,720 |
+| Pages | 98.8% | 99.8% | 191 / 488 |
+| Font runs | 98.7% | 98.0% | 435 / 747 |
 
 More than half of the labelled pages have a broken text layer, mostly pre-Unicode fonts
-and fonts with no Unicode map. 54 of the 74 missed runs are one publisher's pre-Unicode
-font that maps Arabic onto ASCII digits and punctuation (see Limitations). Among the
-flagged clean runs, the largest group is fonts whose elongation glyphs extract as U+FFFD
-inside otherwise correct words; harfix sends those to `ocr`. Two rules (the
-consecutive-code-point condition for Quran glyph fonts and the exclusion of ornate
-parentheses ﴾﴿) were added after inspecting some of these books, so this is not a fully
-held-out measurement.
+and fonts with no Unicode map. Two rules added after 0.1.0 from dev books raised test
+font-run recall from 92.4% to 98.0%: pre-Unicode fonts mapped onto ASCII digits and
+punctuation, and U+FFFD elongation glyphs inside otherwise intact words (now `repair`
+instead of `ocr`). Samples of two test books had been looked at before the split, so
+the test numbers are close to, but not strictly, held out.
 
 ### Synthetic corruptions
 
@@ -177,7 +178,8 @@ On the test split, windows of at least 80 Arabic letters:
 | Whole font with a wrong letter map | 100% |
 | Private-use glyphs, raw CID codes, Latin-1 legacy encodings, presentation forms | 100% |
 | Quran glyph-ID fonts | 100% |
-| ASCII legacy encodings | 96% (100% at ≥500 letters) |
+| ASCII legacy encodings (letters / digits and punctuation) | 96% / 92% |
+| Unmapped elongation glyphs inside words | 97% (100% at ≥200 letters) |
 | Mirrored lines detected (`check`) | 100% |
 | Lam-alef transposition (`check`) | 90% (97% at ≥200 letters) |
 | Lost word boundaries (`check`) | 99.8% |
@@ -192,8 +194,10 @@ On the test split, windows of at least 80 Arabic letters:
   part of the time.
 - `scan` cannot tell a text layer without word spaces from one with wrong letters: both
   are reported as `same_script_substitution`.
-- A pre-Unicode font is caught only once its runs hold about 15 Latin-looking words, and a
-  font mapped entirely onto digits and punctuation is not caught at all.
+- A pre-Unicode font is caught only once its runs hold about 15 Latin-looking words or 8
+  digit-and-symbol words; a font whose codes land on plain numbers is not caught.
+- `unmapped_elongation` assumes U+FFFD inside a word that reads correctly without it was
+  an elongation glyph. A lost letter whose word still reads as Arabic slips through.
 - `check` splits text without form feeds at line ends, so a single very long line is
   judged as one piece.
 - Scanned pages are routed to OCR but their image quality is not assessed.

@@ -118,6 +118,25 @@ def ascii_legacy_encoding(text: str) -> str:
     return _remap(text, dict(zip(LETTERS, printable, strict=False)))
 
 
+def digit_legacy_encoding(text: str) -> str:
+    """Pre-Unicode Arabic font whose glyphs sit on ASCII digit and punctuation codes only."""
+    symbols = list("0123456789!#$%&)*+,-./:;<=>?@[]^_{|}~")
+    _rng(text, "digits").shuffle(symbols)
+    return _remap(text, dict(zip(LETTERS, symbols, strict=False)))
+
+
+def unmapped_elongation(text: str) -> str:
+    """Kashida glyphs without a Unicode mapping: U+FFFD between letters of a word."""
+    rng = _rng(text, "kashida")
+    out = []
+    for i, ch in enumerate(text):
+        out.append(ch)
+        nxt = text[i + 1] if i + 1 < len(text) else ""
+        if ch in ARABIC_LETTERS and nxt in ARABIC_LETTERS and rng.random() < 0.08:
+            out.append("\ufffd" * rng.randint(1, 3))
+    return "".join(out)
+
+
 def quran_glyph_codes(text: str) -> str:
     """King Fahd Complex page fonts: one Presentation Forms-A code point per word."""
     span = 0xFDFF - 0xFB51
@@ -204,6 +223,8 @@ CASES: list[tuple[str, Callable[[str], str], str | None, str | None]] = [
     ("raw CID codes", cid_codes, "unmapped_glyphs", "unmapped_glyphs"),
     ("legacy encoding", legacy_encoding, "legacy_encoding", "legacy_encoding"),
     ("ASCII legacy encoding", ascii_legacy_encoding, "legacy_encoding", "legacy_encoding"),
+    ("digit legacy encoding", digit_legacy_encoding, "legacy_encoding", "legacy_encoding"),
+    ("unmapped elongation", unmapped_elongation, "unmapped_elongation", "unmapped_elongation"),
     ("Quran glyph codes", quran_glyph_codes, "quran_glyph_codes", "quran_glyph_codes"),
     ("presentation forms", presentation_forms, "presentation_forms", "presentation_forms"),
     ("lam-alef transposition", lam_alef_transposition, "-", "lam_alef_transposition"),

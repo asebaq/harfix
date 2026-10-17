@@ -2,6 +2,7 @@ import pytest
 from conftest import CLEAN, CLEAN_LINES, ascii_legacy, isolated_forms, permute_letters
 
 from harfix import assess_document, assess_text
+from harfix.normalize import letters_only
 
 
 def reverse_lines(text: str) -> str:
@@ -89,6 +90,35 @@ def test_english_prose_is_not_mistaken_for_a_legacy_font():
         "The NATO and UNESCO reports cited in Appendix IV are quoted in English."
     )
     assert assess_text(english, order_known=False).route == "keep"
+
+
+def test_arabic_font_encoded_as_ascii_digits_and_punctuation_needs_ocr(clean_text):
+    # Some pre-Unicode fonts put Arabic glyphs on digit and punctuation codes only.
+    symbols = "0123456789!#$%&)*+,-./:;<=>?@[]^_{|}~"
+    codes = dict(zip(sorted(set(letters_only(clean_text)) - {" "}), symbols, strict=False))
+    legacy = "".join(codes.get(ch, ch) for ch in letters_only(clean_text))
+    result = assess_text(legacy, order_known=False)
+    assert (result.route, result.reasons) == ("ocr", ["legacy_encoding"])
+
+
+def test_numbers_dates_and_percentages_are_not_a_legacy_font():
+    numbers = " ".join(["12-15", "1990/3/12", "15%", "(1)", "[3]", "1/2", "$100", "+5", "45."] * 4)
+    assert assess_text(numbers, order_known=False).route == "keep"
+
+
+def test_unmapped_elongation_glyphs_inside_intact_words_are_repairable(clean_text):
+    # Kashida glyphs without a Unicode mapping extract as U+FFFD between letters.
+    stretched = clean_text.replace("ما", "م\ufffd\ufffdا").replace("لت", "ل\ufffdت")
+    result = assess_text(stretched, order_known=False)
+    assert (result.route, result.reasons) == ("repair", ["unmapped_elongation"])
+
+
+def test_unmapped_glyphs_that_replace_letters_still_need_ocr(clean_text):
+    lost = " ".join(
+        "".join("\ufffd" if i % 3 == 1 and 0 < i < len(w) - 1 else c for i, c in enumerate(w))
+        for w in clean_text.split(" ")
+    )
+    assert assess_text(lost, order_known=False).route == "ocr"
 
 
 def test_quran_glyph_codes_are_not_sent_to_unicode_repair(clean_text):

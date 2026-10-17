@@ -132,6 +132,13 @@ class CharProfile:
     # or a lower-to-upper case flip (`h&c%G`, `pEqLGQb`): rare in real Latin text.
     latin_words: int
     irregular_latin_words: int
+    # Words with no letters that are not numbers (`0)#`, `-!/!1-!/`): pre-Unicode fonts
+    # mapped onto ASCII digits and punctuation. `plain_words` excludes plain numbers.
+    symbol_words: int
+    plain_words: int
+    # U+FFFD with Arabic letters on both sides: often an unmapped elongation (kashida)
+    # glyph inside an otherwise intact word.
+    inner_replacement: int
 
     @property
     def arabic_ratio(self) -> float:
@@ -186,6 +193,28 @@ class CharProfile:
     def irregular_latin_word_ratio(self) -> float:
         return self.irregular_latin_words / self.latin_words if self.latin_words else 0.0
 
+    @property
+    def symbol_word_ratio(self) -> float:
+        return self.symbol_words / self.plain_words if self.plain_words else 0.0
+
+
+_NUMBER = re.compile(r"[+\-−±$€£]?\d[\d.,/:\-–]*[%$€£]?")
+_ASCII_SYMBOL = re.compile(r"[!-/:-@\[-`{-~]")
+_INNER_REPLACEMENT = re.compile(r"(?<=[\u0621-\u0652])\ufffd+(?=[\u0621-\u0652])")
+
+
+def _symbol_words(text: str) -> tuple[int, int]:
+    """(words other than plain numbers, those made of digits and ASCII symbols only)."""
+    plain = symbols = 0
+    for raw in text.split():
+        word = raw.strip(_WORD_EDGES)
+        if not word or _NUMBER.fullmatch(word):
+            continue
+        plain += 1
+        if len(word) >= 2 and _ASCII_SYMBOL.search(word) and not any(c.isalpha() for c in word):
+            symbols += 1
+    return plain, symbols
+
 
 def _latin_words(text: str) -> tuple[int, int]:
     words = irregular = 0
@@ -212,6 +241,8 @@ def profile(text: str) -> CharProfile:
         latin += len(word)
         vowels += sum(1 for c in word.lower() if c in "aeiouy")
     latin_words, irregular_words = _latin_words(text)
+    plain_words, symbol_words = _symbol_words(text)
+    inner_replacement = sum(len(m) for m in _INNER_REPLACEMENT.findall(text))
     arabic = other = forms = ligatures = pua = replacement = bidi = legacy = visible = 0
     for ch in text:
         if ch.isspace():
@@ -256,6 +287,9 @@ def profile(text: str) -> CharProfile:
         latin_vowels=vowels,
         latin_words=latin_words,
         irregular_latin_words=irregular_words,
+        symbol_words=symbol_words,
+        plain_words=plain_words,
+        inner_replacement=inner_replacement,
     )
 
 
