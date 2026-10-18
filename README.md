@@ -103,10 +103,30 @@ not repaired p6: reextract (bidi_controls, presentation_forms, lam_alef_transpos
 not repaired p11: reextract (bidi_controls, presentation_forms, lam_alef_transposition)
 ```
 
+Decode pre-Unicode fonts without OCR. `harfix decode` reads the glyphs of each page and
+decodes them with font maps learned from typed editions of other books in the same fonts
+(packaged: the `AXt…` / `Adv…` family). A page is decoded only when the map knows at least
+80% of its glyphs, and its text is written out only when harfix's own check passes it
+(`keep` or `repair`); other pages stay empty, so page positions are kept:
+
+```console
+$ harfix decode --pages 8-12 mukhtasar_khuqayr.pdf -o decoded.txt
+not decoded p8: font map knows 0% of its glyphs
+decoded p9
+decoded p10
+decoded p11
+decoded p12
+$ sed -n 3p decoded.txt
+هذا المختصر أملاه الشيخ أبو بكر وير في أخر حياته بعد عام
+```
+
+Decoded text gets about 70-85% of words right, so it is meant for search and triage, not
+for quoting. `--json` prints every page with its share of known glyphs and its check.
+
 From Python:
 
 ```python
-from harfix import assess_document, assess_text, repair_text, scan_pdf
+from harfix import assess_document, assess_text, decode_pdf, repair_text, scan_pdf
 
 report = scan_pdf("book.pdf", pages=range(1, 11))
 for page in report.pages:
@@ -120,6 +140,9 @@ fixed = repair_text(extracted_text)  # repaired text, a change log, unrepaired p
 fixed.text, fixed.changes, fixed.unrepaired
 
 verdict = assess_text(snippet)  # one piece of text: checks reading order too
+
+pages = decode_pdf("book.pdf")  # DecodedPage: text, known_share, assessment, trusted
+[p.text for p in pages if p.trusted]
 ```
 
 ## Routes and reasons
@@ -203,6 +226,20 @@ index would match in Shamela's transcriptions (only diacritics and tatweel remov
 The bidi embedding marks pdftotext inserts sit on about half of its pages in this sample
 and stick to the neighbouring words, so they alone hide many words from a search index.
 
+### Decode
+
+Full numbers: [`reports/font_decoder.md`](reports/font_decoder.md). A map learned from 597
+pages of four `AXt…` / `Adv…` books, scored on three other books in the same fonts against
+Shamela's typed text of the same pages, words as multisets:
+
+| Book | Pages | `harfix decode` precision / recall | archive.org OCR (Tesseract) precision / recall |
+|---|---:|---:|---:|
+| 18 | 54 | 76.9% / 71.9% | 72.9% / 69.3% |
+| 1575 | 169 | 84.0% / 77.4% | 61.6% / 54.5% |
+| 1576 | 191 | 77.4% / 70.7% | 67.9% / 63.6% |
+
+The packaged map is trained on all seven books.
+
 ### Synthetic corruptions
 
 Full numbers: [`reports/calibration.md`](reports/calibration.md). Thresholds were fitted on
@@ -240,15 +277,15 @@ On the test split, windows of at least 80 Arabic letters:
 - `check` splits text without form feeds at line ends, so a single very long line is
   judged as one piece.
 - Scanned pages are routed to OCR but their image quality is not assessed.
+- `decode` knows one family of pre-Unicode fonts (`AXt…` / `Adv…`, seven books). Verse
+  text in its `Adv.QAL603` font is not decoded, and fonts that extract as raw glyph IDs
+  (`(cid:N)`) are numbered per PDF, so their maps cannot be learned once for all books.
 - PDF parsing uses pdfminer.six: about 0.1–0.2 s per page on the documents above.
 
 ## Roadmap
 
-- Per-font decoder for legacy and custom Arabic fonts: learn each font family's
-  glyph-to-letter map once from a typed edition, then decode every book that uses it, with
-  no OCR. A prototype trained on 80 pages of one book reads three other books in the same
-  `AXt`/`Adv` font family at 70-87% word precision, level with or above archive.org's OCR
-  of the same pages ([`reports/decoder_prototype.md`](reports/decoder_prototype.md)).
+- More `decode` font families, including verse fonts and glyph-ID fonts (matched by glyph
+  shape instead of code), and a comparison with a modern vision-language OCR model.
 - Docling, LangChain and LlamaIndex integrations.
 - A public benchmark of broken Arabic PDFs with labels per failure class.
 
@@ -265,6 +302,14 @@ uv run python scripts/fetch_shamela.py --out corpus/shamela_text --per-category 
 uv run python scripts/benchmark.py fetch-text   # Shamela transcriptions, about 80 minutes
 uv run python scripts/benchmark.py run
 uv run python scripts/benchmark.py repair       # search matches before/after repair
+
+# decode font maps (typed editions are fetched on first use)
+uv run python scripts/fetch_shamela.py --out corpus/shamela_more --per-category 25 \
+    --max-mb 30 --text-only --seed 1
+uv run --group decoder python scripts/train_font_maps.py --train 9 10 19 1291 \
+    --test 18 1575 1576
+uv run --group decoder python scripts/train_font_maps.py \
+    --train 9 10 18 19 1291 1575 1576 --save src/harfix/data/font_maps.json.gz
 ```
 
 The Shamela PDFs and transcriptions are third-party works: keep them local, never commit

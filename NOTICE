@@ -11,3 +11,7 @@ Apache License, Version 2.0:
   https://huggingface.co/datasets/Misraj/KITAB_pdf_to_markdown_reviewed
 
 No text from these datasets is distributed with harfix; only aggregate character counts.
+
+The font maps (src/harfix/data/font_maps.json.gz) hold glyph-to-letter probabilities
+learned by aligning PDF glyphs with typed editions published on al-Maktaba al-Shamela
+(https://shamela.ws). They contain no text, only per-glyph output probabilities.

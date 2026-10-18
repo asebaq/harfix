@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0
+
+- `harfix decode` and `decode_pdf()`: decode pre-Unicode Arabic fonts without OCR, with a
+  packaged font map for the `AXt…` / `Adv…` desktop-publishing family learned from seven
+  books and their typed editions. A page is decoded only when the map knows at least 80%
+  of its glyphs, and its text is kept only when harfix's own check routes it `keep` or
+  `repair`. On three books the map never saw, 77-84% of decoded words are right, above
+  archive.org's OCR of the same pages (62-73%); see `reports/font_decoder.md`.
+- `scripts/train_font_maps.py` learns and evaluates font maps (needs the `decoder` group).
+
 ## 0.2.0
 
 - `harfix repair` and `repair_text()`: apply the safe fixes to pages `check` routes to

@@ -1,4 +1,5 @@
-"""`harfix scan` for PDFs, `harfix check` and `harfix repair` for extracted text."""
+"""`harfix scan` and `harfix decode` for PDFs, `harfix check` and `harfix repair` for
+extracted text."""
 
 from __future__ import annotations
 
@@ -7,6 +8,7 @@ import json
 import sys
 from pathlib import Path
 
+from .decode import decode_pdf
 from .detect import ROUTES, assess_document
 from .pdf import HarfixError, scan_pdf
 from .repair import repair_text
@@ -124,6 +126,39 @@ def _repair(args: argparse.Namespace) -> int:
     return 0
 
 
+def _decode(args: argparse.Namespace) -> int:
+    try:
+        pages = decode_pdf(args.pdf, pages=args.pages)
+    except FileNotFoundError as error:
+        print(f"harfix: {error}", file=sys.stderr)
+        return 2
+    if args.json:
+        json.dump([p.to_dict() for p in pages], sys.stdout, ensure_ascii=False, indent=2)
+        print()
+        return 0
+    # Only trusted pages carry text; the others stay empty so page positions are kept.
+    text = "\f".join(p.text if p.trusted else "" for p in pages)
+    if args.output:
+        Path(args.output).write_text(text, encoding="utf-8")
+    else:
+        sys.stdout.write(text)
+    for p in pages:
+        if p.assessment is None:
+            print(
+                f"not decoded p{p.page}: font map knows {p.known_share:.0%} of its glyphs",
+                file=sys.stderr,
+            )
+        elif p.trusted:
+            print(f"decoded p{p.page}", file=sys.stderr)
+        else:
+            reasons = ", ".join(p.assessment.reasons)
+            print(
+                f"not trusted p{p.page}: decoded text routes to {p.assessment.route} ({reasons})",
+                file=sys.stderr,
+            )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="harfix", description="Quality gate for Arabic text extracted from PDFs."
@@ -162,6 +197,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--json", action="store_true", help="print text, changes and unrepaired segments"
     )
     repair.set_defaults(func=_repair)
+
+    decode = sub.add_parser(
+        "decode", help="decode pre-Unicode Arabic fonts in a PDF with the packaged font maps"
+    )
+    decode.add_argument("pdf")
+    decode.add_argument("--pages", type=_parse_pages, help="1-based pages, e.g. 1-5,9")
+    decode.add_argument("-o", "--output", help="write the decoded text here instead of stdout")
+    decode.add_argument("--json", action="store_true", help="print every page with its check")
+    decode.set_defaults(func=_decode)
     return parser
 
 

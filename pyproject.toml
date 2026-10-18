@@ -1,6 +1,6 @@
 [project]
 name = "harfix"
-version = "0.2.0"
+version = "0.3.0"
 description = "Quality gate for Arabic PDF text layers: detect garbled, reversed, or unmapped Arabic before it reaches your index."
 readme = "README.md"
 license = "Apache-2.0"
@@ -34,7 +34,7 @@ Changelog = "https://github.com/asebaq/harfix/blob/main/CHANGELOG.md"
 dev = ["pytest>=8.3", "ruff>=0.7"]
 # Only needed to rebuild the packaged language model and thresholds.
 model = ["duckdb>=1.1", "arabic-reshaper>=3.0"]
-# Only needed by scripts/decoder_prototype.py.
+# Only needed to retrain the packaged font maps (scripts/train_font_maps.py).
 decoder = ["numpy>=1.26", "scipy>=1.11"]
 
 [build-system]
