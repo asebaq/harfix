@@ -12,6 +12,7 @@ from pdfminer.layout import LTAnno, LTChar, LTContainer, LTImage, LTPage, LTText
 from pdfminer.pdfparser import PDFSyntaxError
 from pdfminer.psparser import PSException
 
+from .decode import _SUBSET, default_font_map, font_glyph_names
 from .detect import ROUTES, Assessment, Thresholds, assess_text, default_thresholds, worst
 from .model import ModelPair, default_models
 
@@ -29,9 +30,16 @@ class FontReport:
     # "page": judged on this page's text. "document": too little text on this page, so
     # judged on this font's short runs pooled across every scanned page.
     scope: str = "page"
+    # `harfix decode` has a font map or glyph names for this font.
+    decodable: bool = False
 
     def to_dict(self) -> dict:
-        return {"font": self.font, "scope": self.scope, **self.assessment.to_dict()}
+        return {
+            "font": self.font,
+            "scope": self.scope,
+            "decodable": self.decodable,
+            **self.assessment.to_dict(),
+        }
 
 
 @dataclass
@@ -42,12 +50,21 @@ class PageReport:
     has_images: bool
     fonts: list[FontReport] = field(default_factory=list)
 
+    @property
+    def decodable(self) -> bool:
+        """Sent to OCR, but set in fonts `harfix decode` can read; whether the decoded
+        text is good enough is up to `decode`'s own check."""
+        return self.route == "ocr" and any(
+            f.decodable and f.assessment.route == "ocr" for f in self.fonts
+        )
+
     def to_dict(self) -> dict:
         return {
             "page": self.page,
             "route": self.route,
             "reasons": self.reasons,
             "has_images": self.has_images,
+            "decodable": self.decodable,
             "fonts": [f.to_dict() for f in self.fonts],
         }
 
@@ -114,19 +131,31 @@ def scan_pdf(
                 short[font].append(page.runs[font])
     pooled = {font: assess("\n".join(texts)) for font, texts in short.items() if len(texts) > 1}
 
-    return DocumentReport(str(path), [_report(page, pooled, assess) for page in scanned])
+    # Fonts `harfix decode` can read: in its font map, or with Arabic glyph names.
+    families = default_font_map().families
+    named = font_glyph_names(path)
+    decodable = {
+        font
+        for page in scanned
+        for font in page.runs
+        if font in named or _SUBSET.sub("", font) in families
+    }
+    return DocumentReport(str(path), [_report(page, pooled, assess, decodable) for page in scanned])
 
 
 def _report(
-    page: _Page, pooled: dict[str, Assessment], assess: Callable[[str], Assessment]
+    page: _Page,
+    pooled: dict[str, Assessment],
+    assess: Callable[[str], Assessment],
+    decodable: set[str],
 ) -> PageReport:
     fonts = []
     for font, a in page.assessments.items():
         whole = pooled.get(font)
         if not a.decisive and whole and whole.decisive:
-            fonts.append(FontReport(font, whole, "document"))
+            fonts.append(FontReport(font, whole, "document", font in decodable))
         else:
-            fonts.append(FontReport(font, a))
+            fonts.append(FontReport(font, a, decodable=font in decodable))
     fonts.sort(key=lambda f: -int(f.assessment.metrics.get("arabic_letters", 0)))
 
     if not any(text.strip() for text in page.runs.values()):

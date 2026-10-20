@@ -4,6 +4,8 @@ Usage:
     uv run python scripts/benchmark.py fetch-text   # typed text from shamela.ws, resumable
     uv run python scripts/benchmark.py run          # label, scan, score
     uv run python scripts/benchmark.py repair       # search matches before/after repair
+    uv run --group extractors python scripts/benchmark.py extractors  # `check` per extractor
+    uv run python scripts/benchmark.py decode       # `harfix decode` on the labelled pages
 
 Shamela's typed text of a book is a transcription of the same printed edition as the PDF it
 links. A PDF font run made of real words has the right letters; a run that is not has a
@@ -53,7 +55,7 @@ from pdfminer.pdfdocument import PDFDocument
 from pdfminer.pdfpage import PDFPage
 from pdfminer.pdfparser import PDFParser
 
-from harfix import HarfixError, repair_text, scan_pdf
+from harfix import ROUTES, HarfixError, repair_text, scan_pdf
 from harfix.normalize import letters_only
 from harfix.pdf import _collect_page
 
@@ -456,6 +458,10 @@ def _extractors() -> dict[str, callable]:
                 check=True,
             ).stdout
         )
+    if "docling-parse" in _page_extractors():
+        extractors["docling-parse"] = lambda pdf: "\f".join(
+            _docling_pages(pdf, list(range(1, min(PAGES_PER_BOOK, _page_count(pdf)) + 1)))
+        )
     return extractors
 
 
@@ -470,9 +476,11 @@ def measure_repair(manifest: Path) -> None:
         for token in _search_tokens(json.loads(line)["text"])
     }
 
-    def share(text: str) -> float | None:
+    def share(text: str) -> tuple[float, int] | None:
+        """(share of Arabic words found, how many were found)."""
         tokens = _search_tokens(text)
-        return sum(t in vocab for t in tokens) / len(tokens) if tokens else None
+        found = sum(t in vocab for t in tokens)
+        return (found / len(tokens), found) if tokens else None
 
     lines = [
         "# harfix repair: Shamela books",
@@ -482,7 +490,9 @@ def measure_repair(manifest: Path) -> None:
         "Each PDF's first pages are extracted, passed through `repair_text`, and every page it",
         "changed is scored before and after: the share of its Arabic words (diacritics and",
         "tatweel removed, nothing else normalized, as a plain search index would see them)",
-        "that occur in Shamela's typed transcriptions.",
+        "that occur in Shamela's typed transcriptions. A page is worse when that share drops",
+        "by more than a point without more words found (spelling out glyph names adds words",
+        "that the share before did not count).",
         "",
         "| Extractor | Pages repaired | Reasons | Median share before | Median share after "
         "| Pages worse |",
@@ -499,21 +509,241 @@ def measure_repair(manifest: Path) -> None:
                 b, a = share(old[page - 1]), share(new[page - 1])
                 if b is not None and a is not None:
                     before_after.append((b, a))
-        worse = sum(1 for b, a in before_after if a < b - 0.01)
+        worse = sum(1 for b, a in before_after if a[0] < b[0] - 0.01 and a[1] <= b[1])
         lines.append(
             f"| {name} | {len(before_after)} | "
             + ", ".join(f"`{r}` {n}" for r, n in reasons.most_common())
-            + f" | {pct(statistics.median(b for b, _ in before_after))} | "
-            f"{pct(statistics.median(a for _, a in before_after))} | {worse} |"
+            + f" | {pct(statistics.median(b[0] for b, _ in before_after))} | "
+            f"{pct(statistics.median(a[0] for _, a in before_after))} | {worse} |"
         )
         print(lines[-1])
     lines.append("")
     (ROOT / "reports" / "repair.md").write_text("\n".join(lines), encoding="utf-8")
 
 
+# ---------------------------------------------------------------- extractors
+
+
+def _docling_pages(pdf: Path, pages: list[int]) -> list[str]:
+    """Each page's visible text cells, one per line, as docling-parse gives them to Docling."""
+    from docling_parse.pdf_parser import DoclingPdfParser
+
+    doc = DoclingPdfParser().load(str(pdf))
+    hidden = ("INVISIBLE", "ONLY_CLIPPING")
+    out = []
+    for n in pages:
+        cells = doc.get_page(n).textline_cells
+        out.append("\n".join(c.text for c in cells if c.rendering_mode.name not in hidden))
+    doc.unload()
+    return out
+
+
+def _pdftotext_pages(pdf: Path, pages: list[int]) -> list[str]:
+    return [
+        subprocess.run(
+            ["pdftotext", "-f", str(n), "-l", str(n), str(pdf), "-"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip("\f")
+        for n in pages
+    ]
+
+
+def _pdfminer_pages(pdf: Path, pages: list[int]) -> list[str]:
+    from pdfminer.high_level import extract_text
+
+    # extract_text ends every page with a form feed.
+    return [extract_text(str(pdf), page_numbers=[n - 1]).strip("\f") for n in pages]
+
+
+def _page_extractors() -> dict[str, callable]:
+    extractors = {"pdfminer.six": _pdfminer_pages}
+    if shutil.which("pdftotext"):
+        extractors["pdftotext"] = _pdftotext_pages
+    try:
+        import docling_parse  # noqa: F401
+
+        extractors["docling-parse"] = _docling_pages
+    except ImportError:
+        print("docling-parse not installed: uv run --group extractors ...")
+    return extractors
+
+
+def _check_book(job: tuple[str, Path, list[int]]) -> list[tuple[str, list[str], str]]:
+    """(route, reasons, repaired text) per page, as `harfix check` and `repair` see the
+    extractor's output with one form feed between pages."""
+    from harfix import assess_document
+
+    name, pdf, pages = job
+    texts = _page_extractors()[name](pdf, pages)
+    joined = "\f".join(texts)
+    report = assess_document(joined)
+    repaired = repair_text(joined).text.split("\f")
+    by_page: dict[int, list] = defaultdict(list)
+    for segment in report.segments:
+        by_page[segment.page].append(segment.assessment)
+    out = []
+    for i in range(len(pages)):
+        found = by_page.get(i + 1, [])
+        route = max((a.route for a in found), default="keep", key=ROUTES.index)
+        reasons = sorted({r for a in found for r in a.reasons})
+        out.append((route, reasons, repaired[i]))
+    return out
+
+
+def measure_extractors(manifest: Path, words_file: Path | None) -> None:
+    """`harfix check` on each extractor's output of the labelled pages of `run`.
+
+    Page labels come from `run` (the PDF's font runs against the typed text), so they say
+    whether the text layer is broken whatever the extractor. A broken page is caught when
+    `check` routes it to `ocr`, or to `repair` and the repaired text then labels clean. A
+    clean page is wrongly flagged when it is routed to `ocr`. `reextract` (the extractor
+    damaged correct text) is counted on its own.
+    """
+    from concurrent.futures import ProcessPoolExecutor
+
+    results = json.loads((manifest.parent / "benchmark_runs.json").read_text(encoding="utf-8"))
+    texts = sorted((manifest.parent / "text").glob("*.jsonl"))
+    typed = "\n".join(json.loads(line)["text"] for p in texts for line in p.open(encoding="utf-8"))
+    vocab = vocabulary(typed, words_file)
+    files = {"+".join(str(i) for i in pdf["book_ids"]): pdf["file"] for pdf in _pdfs(manifest)}
+
+    lines = [
+        "# harfix check: one benchmark, three extractors",
+        "",
+        f"Generated {dt.date.today().isoformat()} by `scripts/benchmark.py extractors`.",
+        "",
+        "The labelled pages of [`benchmark.md`](benchmark.md), extracted by each tool and passed",
+        "to `harfix check` and `harfix repair` with one form feed between pages. Labels say",
+        "whether the PDF's text layer is broken and do not depend on the extractor. A broken",
+        "page is caught when it is routed to `ocr`, or to `repair` and the repaired text then",
+        "labels clean; a clean page is wrongly flagged when it is routed to `ocr`. `reextract`",
+        "means the extractor damaged text that is right in the PDF; it is counted separately.",
+        "docling-parse text is each page's visible text cells, one per line, as Docling",
+        "receives it.",
+        "",
+        "| Split | Extractor | Broken: ocr | Broken: repaired | Broken: reextract | "
+        "Broken: missed | Clean: ocr | Clean: reextract | Clean: kept or repaired | "
+        "Precision | Recall |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    caught_reasons, missed_reasons = {}, {}
+    for name in _page_extractors():
+        jobs = [
+            (name, manifest.parent / files[r["book_id"]], [p["page"] for p in r["pages"]])
+            for r in results
+        ]
+        with ProcessPoolExecutor() as pool:
+            checked = list(pool.map(_check_book, jobs))
+        rows = []
+        for r, pages in zip(results, checked, strict=True):
+            for p, (route, reasons, repaired) in zip(r["pages"], pages, strict=True):
+                if p["label"] not in ("clean", "broken"):
+                    continue
+                if route in ("ocr", "reextract"):
+                    verdict = route
+                elif route == "repair" and label_run(repaired, vocab)[0] == "clean":
+                    verdict = "repaired"
+                else:
+                    verdict = "kept"
+                rows.append((r["split"], p["label"], verdict, reasons))
+        caught_reasons[name] = Counter(
+            reason
+            for _, label, verdict, reasons in rows
+            if label == "broken" and verdict in ("ocr", "repaired")
+            for reason in reasons
+        )
+        missed_reasons[name] = Counter(
+            ", ".join(reasons) or "none"
+            for _, label, verdict, reasons in rows
+            if label == "broken" and verdict == "kept"
+        )
+        for split in ("test", "all"):
+            c = Counter((label, verdict) for s, label, verdict, _ in rows if split in ("all", s))
+            caught = c["broken", "ocr"] + c["broken", "repaired"]
+            broken = sum(n for (label, _), n in c.items() if label == "broken")
+            wrong = c["clean", "ocr"]
+            lines.append(
+                f"| {split} | {name} | {c['broken', 'ocr']} | {c['broken', 'repaired']} | "
+                f"{c['broken', 'reextract']} | {c['broken', 'kept']} | {wrong} | "
+                f"{c['clean', 'reextract']} | {c['clean', 'kept'] + c['clean', 'repaired']} | "
+                f"{pct(caught / (caught + wrong) if caught + wrong else None)} | "
+                f"{pct(caught / broken if broken else None)} |"
+            )
+            print(lines[-1])
+    lines += ["", "Reasons on caught broken pages (all books):", ""]
+    for name, reasons in caught_reasons.items():
+        lines.append(f"- {name}: " + ", ".join(f"`{r}` {n}" for r, n in reasons.most_common()))
+    lines += ["", "Missed broken pages by reasons found (all books):", ""]
+    for name, reasons in missed_reasons.items():
+        lines.append(f"- {name}: " + ", ".join(f"{r} {n}" for r, n in reasons.most_common(6)))
+        print(lines[-1])
+    lines.append("")
+    (ROOT / "reports" / "extractors.md").write_text("\n".join(lines), encoding="utf-8")
+
+
+# ---------------------------------------------------------------- decode
+
+
+def _decode_book(job: tuple[Path, list[int]]) -> list[tuple[int, bool, bool, str]]:
+    from harfix import decode_pdf
+
+    pdf, pages = job
+    return [
+        (p.page, p.assessment is not None, p.trusted, p.text) for p in decode_pdf(pdf, pages=pages)
+    ]
+
+
+def measure_decode(manifest: Path, words_file: Path | None) -> None:
+    """`harfix decode` on the labelled pages of `run`: which pages it decodes, which it
+    trusts, and whether the decoded text then labels clean against the typed text."""
+    from concurrent.futures import ProcessPoolExecutor
+
+    results = json.loads((manifest.parent / "benchmark_runs.json").read_text(encoding="utf-8"))
+    texts = sorted((manifest.parent / "text").glob("*.jsonl"))
+    typed = "\n".join(json.loads(line)["text"] for p in texts for line in p.open(encoding="utf-8"))
+    vocab = vocabulary(typed, words_file)
+    files = {"+".join(str(i) for i in pdf["book_ids"]): pdf["file"] for pdf in _pdfs(manifest)}
+    labelled = [(r, [p for p in r["pages"] if p["label"] in ("clean", "broken")]) for r in results]
+    jobs = [(manifest.parent / files[r["book_id"]], [p["page"] for p in ps]) for r, ps in labelled]
+    with ProcessPoolExecutor() as pool:
+        decoded = list(pool.map(_decode_book, jobs))
+    table: Counter = Counter()
+    by_book: dict[str, list[str]] = defaultdict(list)
+    for (r, pages), out in zip(labelled, decoded, strict=True):
+        labels = {p["page"]: p["label"] for p in pages}
+        for page, was_decoded, trusted, text in out:
+            if not was_decoded:
+                table[labels[page], "not decoded"] += 1
+                continue
+            after = label_run(text, vocab)[0]
+            table[labels[page], "trusted" if trusted else "not trusted", after] += 1
+            by_book[r["book_id"]].append(f"{'trusted' if trusted else 'not trusted'}: {after}")
+    lines = [
+        "| Page label | Decoded and trusted | of which label clean after decoding | "
+        "Decoded, not trusted | Not decoded |",
+        "|---|---:|---:|---:|---:|",
+    ]
+    for label in ("broken", "clean"):
+        trusted = sum(n for k, n in table.items() if k[0] == label and k[1] == "trusted")
+        untrusted = sum(n for k, n in table.items() if k[0] == label and k[1] == "not trusted")
+        lines.append(
+            f"| {label} | {trusted} | {table[label, 'trusted', 'clean']} | {untrusted} | "
+            f"{table[label, 'not decoded']} |"
+        )
+    lines += ["", "| Book | Decoded pages | Trusted | Trusted and clean after decoding |"]
+    lines.append("|---|---:|---:|---:|")
+    for book, verdicts in sorted(by_book.items(), key=lambda kv: int(kv[0].split("+")[0])):
+        trusted = [v for v in verdicts if v.startswith("trusted")]
+        clean = sum(v == "trusted: clean" for v in verdicts)
+        lines.append(f"| {book} | {len(verdicts)} | {len(trusted)} | {clean} |")
+    print("\n".join(lines))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["fetch-text", "run", "repair"])
+    parser.add_argument("command", choices=["fetch-text", "run", "repair", "extractors", "decode"])
     parser.add_argument(
         "--manifest", type=Path, default=ROOT / "corpus" / "shamela_text" / "manifest.jsonl"
     )
@@ -528,6 +758,10 @@ def main() -> None:
         fetch_text(args.manifest)
     elif args.command == "repair":
         measure_repair(args.manifest)
+    elif args.command == "extractors":
+        measure_extractors(args.manifest, args.words if args.words.is_file() else None)
+    elif args.command == "decode":
+        measure_decode(args.manifest, args.words if args.words.is_file() else None)
     else:
         run(args.manifest, args.words if args.words.is_file() else None)
 

@@ -8,7 +8,7 @@ import json
 import sys
 from pathlib import Path
 
-from .decode import decode_pdf
+from .decode import MIN_DECODED, decode_pdf
 from .detect import ROUTES, assess_document
 from .pdf import HarfixError, scan_pdf
 from .repair import repair_text
@@ -54,11 +54,18 @@ def _scan(args: argparse.Namespace) -> int:
             print(f"{report.path}")
             counts = ", ".join(f"{route}={n}" for route, n in report.route_counts.items() if n)
             print(f"  pages: {counts}")
+            decodable = [p.page for p in report.pages if p.decodable]
+            if decodable:
+                print(
+                    f"  {len(decodable)} ocr page(s) use fonts `harfix decode` can read: "
+                    f"harfix decode {report.path}"
+                )
             for page in report.pages:
                 if page.route == "keep" and not args.verbose:
                     continue
                 reasons = ", ".join(page.reasons) or "-"
-                print(f"  p{page.page:<5} {page.route:<9} {reasons}")
+                hint = " (decodable)" if page.decodable else ""
+                print(f"  p{page.page:<5} {page.route:<9} {reasons}{hint}")
                 if args.verbose:
                     for font in page.fonts:
                         a = font.assessment
@@ -144,10 +151,12 @@ def _decode(args: argparse.Namespace) -> int:
         sys.stdout.write(text)
     for p in pages:
         if p.assessment is None:
-            print(
-                f"not decoded p{p.page}: font map knows {p.known_share:.0%} of its glyphs",
-                file=sys.stderr,
+            why = (
+                "no glyphs in fonts harfix can decode"
+                if p.decoded_share < MIN_DECODED
+                else f"only {p.known_share:.0%} of its glyphs can be read"
             )
+            print(f"not decoded p{p.page}: {why}", file=sys.stderr)
         elif p.trusted:
             print(f"decoded p{p.page}", file=sys.stderr)
         else:

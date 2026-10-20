@@ -2,6 +2,8 @@
 
 Only segments whose route is `repair` are changed, and only for the reasons found in them:
 
+- `glyph_names`: spell out Arabic glyph names (`qafisolated`) that some extractors write
+  for fonts without a Unicode map, in reading order; marks and tatweel are dropped.
 - `bidi_controls`: delete bidi formatting characters (a space where they joined words).
 - `unmapped_elongation`: delete U+FFFD between Arabic letters.
 - `visual_order`: reverse each Arabic line, keeping left-to-right runs (numbers, Latin
@@ -18,6 +20,7 @@ import re
 from dataclasses import asdict, dataclass
 
 from .detect import Segment, Thresholds, assess_document, default_thresholds, line_direction
+from .glyphnames import convert as convert_glyph_names
 from .model import ModelPair, default_models
 from .normalize import (
     decompose_presentation_forms,
@@ -87,6 +90,9 @@ def _reverse_lines(text: str, models: ModelPair, t: Thresholds) -> tuple[str, in
 
 def _repair_piece(text: str, reasons: list[str], models: ModelPair, t: Thresholds):
     done: list[tuple[str, int]] = []
+    if "glyph_names" in reasons:
+        text, n = convert_glyph_names(text, models.spaced)
+        done.append(("glyph_names", n))
     if "bidi_controls" in reasons:
         text, n = drop_bidi_controls(text)
         done.append(("bidi_controls", n))

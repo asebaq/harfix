@@ -34,7 +34,7 @@ search query, as mirrored lines, or as pre-Unicode symbols (`Âd‡;« ≤∞`).
 this text straight into your RAG index. harfix scores the letters themselves with a small
 Arabic character model and reports what is wrong and what to do about it.
 
-harfix never modifies text. It only decides.
+harfix changes text only when asked to (`repair`, `decode`), and reports every change.
 
 ## Install
 
@@ -53,16 +53,17 @@ Audit the text layer of PDFs:
 $ harfix scan --pages 8-12 --fail-on ocr mukhtasar_khuqayr.pdf
 mukhtasar_khuqayr.pdf
   pages: keep=1, ocr=4
-  p9     ocr       legacy_encoding
-  p10    ocr       legacy_encoding
+  3 ocr page(s) use fonts `harfix decode` can read: harfix decode mukhtasar_khuqayr.pdf
+  p9     ocr       legacy_encoding (decodable)
+  p10    ocr       legacy_encoding (decodable)
   p11    ocr       legacy_encoding
-  p12    ocr       legacy_encoding
+  p12    ocr       legacy_encoding (decodable)
 ```
 
 That book was typeset in pre-Unicode Arabic fonts (`AXt…`, `Adv…`), so its text layer
 extracts as Latin gibberish. `-v` lists every font on every page; `--json` prints the full
-report; `--fail-on repair|reextract|ocr` turns the scan into a CI or pipeline gate (exit
-code 1).
+report (fonts and pages `harfix decode` can read carry `"decodable": true`);
+`--fail-on repair|reextract|ocr` turns the scan into a CI or pipeline gate (exit code 1).
 
 Check text produced by any extractor (Docling, pdftotext, Marker, an OCR engine). Pages
 separated by form feeds (pdftotext's default) are judged one by one; other text in runs of
@@ -103,25 +104,30 @@ not repaired p6: reextract (bidi_controls, presentation_forms, lam_alef_transpos
 not repaired p11: reextract (bidi_controls, presentation_forms, lam_alef_transposition)
 ```
 
-Decode pre-Unicode fonts without OCR. `harfix decode` reads the glyphs of each page and
-decodes them with font maps learned from typed editions of other books in the same fonts
-(packaged: the `AXt…` / `Adv…` family). A page is decoded only when the map knows at least
-80% of its glyphs, and its text is written out only when harfix's own check passes it
+Decode fonts without a usable Unicode map, without OCR. `harfix decode` reads the glyphs
+of each page and decodes two kinds of font: pre-Unicode fonts, with font maps learned from
+typed editions of other books in the same fonts (packaged: the `AXt…` / `Adv…` family),
+and fonts whose glyphs carry Arabic names in the PDF (`qafisolated`), which spell the
+letters exactly. Text in other fonts on the page (Unicode headings, page numbers) is kept
+unless harfix's check rejects that font. A page is decoded only when at least 80% of its
+glyphs can be read, and its text is written out only when harfix's own check passes it
 (`keep` or `repair`); other pages stay empty, so page positions are kept:
 
 ```console
 $ harfix decode --pages 8-12 mukhtasar_khuqayr.pdf -o decoded.txt
-not decoded p8: font map knows 0% of its glyphs
+not decoded p8: no glyphs in fonts harfix can decode
 decoded p9
 decoded p10
 decoded p11
 decoded p12
-$ sed -n 3p decoded.txt
-هذا المختصر أملاه الشيخ أبو بكر وير في أخر حياته بعد عام
+$ sed -n 4p decoded.txt
+هذا المختصر أملاه الشيخ أبو بكر وقير في أخر حياته بعد عام
 ```
 
-Decoded text gets about 70-85% of words right, so it is meant for search and triage, not
-for quoting. `--json` prints every page with its share of known glyphs and its check.
+Text decoded with a learned map gets 78-85% of words right on books the map was not
+trained on, so it is meant for search and triage, not for quoting; named glyphs are
+spelled exactly. `--json` prints every page with its shares of readable and decoded
+glyphs and its check.
 
 From Python:
 
@@ -150,9 +156,16 @@ pages = decode_pdf("book.pdf")  # DecodedPage: text, known_share, assessment, tr
 | Route | Meaning | Reasons |
 |---|---|---|
 | `keep` | Index as is. | — |
-| `repair` | Text is right but encoded or ordered badly; a deterministic fix exists. | `presentation_forms` (apply NFKC), `visual_order` (reverse each line), `unmapped_elongation` (delete U+FFFD), `bidi_controls` (delete embedding marks) |
+| `repair` | Text is right but encoded or ordered badly; a deterministic fix exists. | `presentation_forms` (apply NFKC), `visual_order` (reverse each line), `unmapped_elongation` (delete U+FFFD), `bidi_controls` (delete embedding marks), `glyph_names` (spell out glyph names) |
 | `reextract` | The extractor damaged correct source text; try another extractor. | `mixed_reading_order`, `lam_alef_transposition`, `lost_word_boundaries` |
 | `ocr` | The text layer itself is wrong; read the pixels. | `same_script_substitution`, `unmapped_glyphs`, `legacy_encoding`, `quran_glyph_codes`, `no_text_layer` |
+
+Fonts with no Unicode map look different in each extractor. pdfminer.six writes their
+glyphs as `(cid:N)`; docling-parse writes each glyph's name (`yehfinalfehinitial`), its
+code as a number (`179 75 154`), or, for pre-Unicode fonts spread over several subsets,
+one character per text cell. All of these are caught. Glyph names spell the letters, so
+`glyph_names` is a repair: `harfix repair` spells them out in reading order (marks and
+tatweel dropped), and the spelled text is then judged like any other.
 
 `quran_glyph_codes`: Quran text set in the King Fahd Complex page fonts (`QCF_P…`) stores
 one glyph ID per word under Presentation Forms-A code points. NFKC would turn those IDs
@@ -180,11 +193,12 @@ on its short runs pooled across the scanned pages; such font reports carry
    character) or isolated very improbable letters (spikes).
 4. A second model trained without spaces separates "the letters are wrong" from "the
    extractor broke the word spacing".
-5. Character-class checks catch private-use glyphs, raw `(cid:N)` codes, presentation
-   forms, Quran glyph-ID fonts, and pre-Unicode encodings without any model. Pre-Unicode
-   fonts land either on Latin-1 and symbol characters or on ASCII, where they read as
-   Latin "words" with almost no vowels or with digits, symbols and case flips inside
-   (`otsrqponmlkA{zvjihgf`, `h&c%G`); English text has about 40% vowels and few such words.
+5. Character-class checks catch private-use glyphs, raw `(cid:N)` codes, glyph codes and
+   glyph names, presentation forms, Quran glyph-ID fonts, and pre-Unicode encodings
+   without any model. Pre-Unicode fonts land either on Latin-1 and symbol characters or
+   on ASCII, where they read as Latin "words" with almost no vowels or with digits,
+   symbols and case flips inside (`otsrqponmlkA{zvjihgf`, `h&c%G`); English text has about
+   40% vowels and few such words.
 
 ## Accuracy
 
@@ -212,6 +226,24 @@ punctuation, and U+FFFD elongation glyphs inside otherwise intact words (now `re
 instead of `ocr`). Samples of two test books had been looked at before the split, so
 the test numbers are close to, but not strictly, held out.
 
+### Other extractors
+
+Full numbers: [`reports/extractors.md`](reports/extractors.md). The same labelled pages,
+extracted by three tools and passed to `harfix check` and `harfix repair`. A broken page
+counts as caught when it is routed to `ocr`, or to `repair` and the repaired text then
+labels clean; a clean page is wrongly flagged when routed to `ocr`. All 57 books:
+
+| Extractor | Precision | Recall (0.4.0) | Recall (0.3.0) |
+|---|---:|---:|---:|
+| pdfminer.six | 99.5% | 96.0% | 96.0% |
+| pdftotext | 99.4% | 93.3% | 93.2% |
+| docling-parse (text cells, as Docling reads them) | 99.5% | 95.2% | 33.5% |
+
+The docling-parse rules (glyph codes, glyph names, one character per cell) were written
+while looking at these books, dev and test alike, so its 0.4.0 numbers are not held out.
+Of the broken pages it caught, 177 went to `repair` (176 of them for `glyph_names`) and
+their repaired text labels clean against Shamela's transcriptions.
+
 ### Repair
 
 Full numbers: [`reports/repair.md`](reports/repair.md). On the same Shamela PDFs, every
@@ -220,25 +252,33 @@ index would match in Shamela's transcriptions (only diacritics and tatweel remov
 
 | Extractor | Pages repaired | Median match before | Median match after | Pages worse |
 |---|---:|---:|---:|---:|
-| pdfminer.six (mostly visual order) | 453 | 20.0% | 90.3% | 0 |
+| pdfminer.six (mostly visual order) | 453 | 20.0% | 90.4% | 0 |
 | pdftotext (bidi marks, presentation forms, elongation glyphs) | 562 | 25.4% | 92.0% | 0 |
+| docling-parse (glyph names, presentation forms, elongation glyphs) | 141 | 6.1% | 97.1% | 0 |
 
 The bidi embedding marks pdftotext inserts sit on about half of its pages in this sample
 and stick to the neighbouring words, so they alone hide many words from a search index.
 
 ### Decode
 
-Full numbers: [`reports/font_decoder.md`](reports/font_decoder.md). A map learned from 597
-pages of four `AXt…` / `Adv…` books, scored on three other books in the same fonts against
-Shamela's typed text of the same pages, words as multisets:
+Full numbers: [`reports/font_decoder.md`](reports/font_decoder.md). Each of seven
+`AXt…` / `Adv…` books decoded with a map learned from the other six, against Shamela's
+typed text of the same pages, words as multisets:
 
-| Book | Pages | `harfix decode` precision / recall | archive.org OCR (Tesseract) precision / recall |
+| Left-out book | Pages | `harfix decode` precision / recall | archive.org OCR (Tesseract) precision / recall |
 |---|---:|---:|---:|
-| 18 | 54 | 76.9% / 71.9% | 72.9% / 69.3% |
-| 1575 | 169 | 84.0% / 77.4% | 61.6% / 54.5% |
-| 1576 | 191 | 77.4% / 70.7% | 67.9% / 63.6% |
+| 9 | 159 | 84.0% / 82.7% | 54.8% / 42.2% |
+| 10 | 186 | 84.6% / 81.9% | 81.5% / 78.2% |
+| 18 | 54 | 80.4% / 75.9% | 72.9% / 69.3% |
+| 19 | 183 | 79.5% / 77.7% | — |
+| 1575 | 169 | 84.5% / 78.0% | 61.6% / 54.5% |
+| 1576 | 191 | 78.5% / 71.8% | 67.9% / 63.6% |
 
-The packaged map is trained on all seven books.
+The seventh, book 1291, does not decode when left out, and the check rejects 67 of its
+69 pages. The packaged map is trained on all seven. On the benchmark's labelled pages,
+`decode` reads 310 of the 1,160 broken pages (27%: four learned-map books, five books with
+named glyphs), every one of them labels clean after decoding, and it decodes none of the
+419 clean pages.
 
 ### Synthetic corruptions
 
@@ -271,21 +311,28 @@ On the test split, windows of at least 80 Arabic letters:
 - `scan` cannot tell a text layer without word spaces from one with wrong letters: both
   are reported as `same_script_substitution`.
 - A pre-Unicode font is caught only once its runs hold about 15 Latin-looking words or 8
-  digit-and-symbol words; a font whose codes land on plain numbers is not caught.
+  digit-and-symbol words; a font whose codes land on plain numbers is not caught by
+  `scan`. In extractor output (`check`), at least 20 repeating numbers with ten or more
+  different values are taken as glyph codes.
 - `unmapped_elongation` assumes U+FFFD inside a word that reads correctly without it was
   an elongation glyph. A lost letter whose word still reads as Arabic slips through.
 - `check` splits text without form feeds at line ends, so a single very long line is
   judged as one piece.
 - Scanned pages are routed to OCR but their image quality is not assessed.
-- `decode` knows one family of pre-Unicode fonts (`AXt…` / `Adv…`, seven books). Verse
-  text in its `Adv.QAL603` font is not decoded, and fonts that extract as raw glyph IDs
-  (`(cid:N)`) are numbered per PDF, so their maps cannot be learned once for all books.
+- `decode` knows one family of pre-Unicode fonts (`AXt…` / `Adv…`, seven books) and one
+  naming scheme for glyph names. Verse text in `Adv.QAL603` is not decoded, nor are
+  pre-Unicode fonts with Latin glyph names (`HeshamNormal`, `MCSTaybahS_Unormal`).
+  harfix's check passes decoded text whose letters read as Arabic; a page with a fifth
+  of its words wrong can still be trusted.
 - PDF parsing uses pdfminer.six: about 0.1–0.2 s per page on the documents above.
 
 ## Roadmap
 
-- More `decode` font families, including verse fonts and glyph-ID fonts (matched by glyph
-  shape instead of code), and a comparison with a modern vision-language OCR model.
+- More `decode` font families: verse fonts, pre-Unicode fonts with Latin glyph names
+  (one map per glyph name, learned once for every PDF), other glyph-naming schemes; and a
+  comparison with a modern vision-language OCR model.
+- A follow-up to Docling's broken-text-layer check (docling-project/docling#4654) with
+  the glyph code, glyph name and one-character-per-cell rules.
 - Docling, LangChain and LlamaIndex integrations.
 - A public benchmark of broken Arabic PDFs with labels per failure class.
 
@@ -301,13 +348,16 @@ uv run python scripts/calibrate.py --pages 1-40 --pdf corpus/shamela/*.pdf
 uv run python scripts/fetch_shamela.py --out corpus/shamela_text --per-category 6 --text-only
 uv run python scripts/benchmark.py fetch-text   # Shamela transcriptions, about 80 minutes
 uv run python scripts/benchmark.py run
-uv run python scripts/benchmark.py repair       # search matches before/after repair
+uv run --group extractors python scripts/benchmark.py extractors  # pdfminer, pdftotext, docling-parse
+uv run --group extractors python scripts/benchmark.py repair  # search matches before/after repair
+uv run python scripts/benchmark.py decode       # decode the labelled pages
 
 # decode font maps (typed editions are fetched on first use)
 uv run python scripts/fetch_shamela.py --out corpus/shamela_more --per-category 25 \
     --max-mb 30 --text-only --seed 1
-uv run --group decoder python scripts/train_font_maps.py --train 9 10 19 1291 \
-    --test 18 1575 1576
+# leave one book out, for each of 9 10 18 19 1291 1575 1576:
+uv run --group decoder python scripts/train_font_maps.py --train 10 18 19 1291 1575 1576 \
+    --test 9
 uv run --group decoder python scripts/train_font_maps.py \
     --train 9 10 18 19 1291 1575 1576 --save src/harfix/data/font_maps.json.gz
 ```

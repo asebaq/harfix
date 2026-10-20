@@ -139,6 +139,13 @@ class CharProfile:
     # U+FFFD with Arabic letters on both sides: often an unmapped elongation (kashida)
     # glyph inside an otherwise intact word.
     inner_replacement: int
+    # All whitespace-separated words, and those that are one ASCII character other than a
+    # digit or leader punctuation (`. . .`), counted only when at least ten different
+    # characters occur so: what a pre-Unicode font looks like when an extractor splits text
+    # at every font change and the font spreads each word over several subsets. A bracket
+    # or bullet font repeats a few characters.
+    words: int = 0
+    fragment_words: int = 0
 
     @property
     def arabic_ratio(self) -> float:
@@ -201,6 +208,7 @@ class CharProfile:
 _NUMBER = re.compile(r"[+\-−±$€£]?\d[\d.,/:\-–]*[%$€£]?")
 _ASCII_SYMBOL = re.compile(r"[!-/:-@\[-`{-~]")
 _INNER_REPLACEMENT = re.compile(r"(?<=[\u0621-\u0652])\ufffd+(?=[\u0621-\u0652])")
+_LEADERS = frozenset(".-_*=~")
 
 
 def _symbol_words(text: str) -> tuple[int, int]:
@@ -292,6 +300,10 @@ def profile(text: str) -> CharProfile:
     latin_words, irregular_words = _latin_words(text)
     plain_words, symbol_words = _symbol_words(text)
     inner_replacement = sum(len(m) for m in _INNER_REPLACEMENT.findall(text))
+    tokens = text.split()
+    singles = [w for w in tokens if len(w) == 1 and w.isascii() and not w.isdigit()]
+    singles = [w for w in singles if w not in _LEADERS]
+    fragments = len(singles) if len(set(singles)) >= 10 else 0
     arabic = other = forms = ligatures = pua = replacement = bidi = legacy = visible = 0
     for ch in text:
         if ch.isspace():
@@ -339,6 +351,8 @@ def profile(text: str) -> CharProfile:
         symbol_words=symbol_words,
         plain_words=plain_words,
         inner_replacement=inner_replacement,
+        words=len(tokens),
+        fragment_words=fragments,
     )
 
 

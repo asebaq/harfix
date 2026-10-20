@@ -32,7 +32,8 @@ import numpy as np
 from pdfminer.high_level import extract_pages
 from scipy.signal import lfilter
 
-from harfix.decode import SPACE, FontMap, decode_line, glyph_lines, is_gap
+from harfix.decode import SPACE, FontMap, decode_line, glyph_lines, is_gap, screen_kept_fonts
+from harfix.detect import assess_text
 from harfix.model import default_models
 from harfix.normalize import letters_only
 
@@ -317,6 +318,47 @@ def argmax_decode(font_map: FontMap, lines: list[list[str]]) -> str:
     )
 
 
+def best_offset(font_map: FontMap, lines, typed, candidates) -> int:
+    """The page shift whose typed pages the map's plain reading matches best."""
+    sample = sorted(i for i in lines if lines[i])[::5]
+    quick = {i: argmax_decode(font_map, lines[i]) for i in sample}
+    return max(
+        sorted(candidates),
+        key=lambda d: sum(word_scores(quick[i], typed.get(i - d, ""))[1] for i in sample),
+    )
+
+
+def fit(books, pairs, held_out, train, iterations, metadata) -> FontMap:
+    """Learn a font map from the training books' paired pages (held-out pages left out)."""
+    training = [
+        (lines, letters)
+        for b in train
+        for index, (lines, letters) in pairs[b].items()
+        if index not in held_out.get(b, set())
+    ]
+    letter_pairs = Counter(
+        letters[j : j + 2]
+        for _, letters in training
+        for j in range(len(letters) - 1)
+        if SPACE not in letters[j : j + 2]
+    )
+    alphabet = "".join(sorted({c for b in books.values() for t in b[1].values() for c in t}))
+    model = Model(alphabet, [p for p, _ in letter_pairs.most_common(150)])
+    examples = [example(model, lines, letters) for lines, letters in training]
+    print(f"training on {len(examples)} pages, {len(model.symbols)} symbols")
+    history = model.train(examples, iterations)
+    print("log-likelihood:", [round(h) for h in history])
+    font_map = model.to_font_map({**metadata, "pages": len(examples)})
+    print(f"font map: {len(font_map.outputs)} symbols, families {font_map.metadata['families']}")
+    return font_map
+
+
+def _trusted(text: str) -> bool:
+    """Whether `harfix decode` would keep this decoded page (see `DecodedPage.trusted`)."""
+    verdict = assess_text(text)
+    return verdict.sufficient and verdict.route in ("keep", "repair")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--train", nargs="+", required=True, help="Shamela book ids")
@@ -339,66 +381,70 @@ def main() -> None:
         rng.shuffle(pages)
         held_out[b] = set(pages[: len(pages) // 2])
 
-    training = [
-        (lines, letters)
-        for b in args.train
-        for index, (lines, letters) in pairs[b].items()
-        if index not in held_out.get(b, set())
-    ]
-    letter_pairs = Counter(
-        letters[j : j + 2]
-        for _, letters in training
-        for j in range(len(letters) - 1)
-        if SPACE not in letters[j : j + 2]
-    )
-    alphabet = "".join(sorted({c for b in books.values() for t in b[1].values() for c in t}))
-    model = Model(alphabet, [p for p, _ in letter_pairs.most_common(150)])
-    examples = [example(model, lines, letters) for lines, letters in training]
-    print(f"training on {len(examples)} pages, {len(model.symbols)} symbols")
-    history = model.train(examples, args.iterations)
-    print("log-likelihood:", [round(h) for h in history])
-    font_map = model.to_font_map(
-        {
-            "trained_on_shamela_books": sorted(args.train, key=int),
-            "pages": len(examples),
-            "date": dt.date.today().isoformat(),
-        }
-    )
-    print(f"font map: {len(font_map.outputs)} symbols, families {font_map.metadata['families']}")
+    metadata = {
+        "trained_on_shamela_books": sorted(args.train, key=int),
+        "date": dt.date.today().isoformat(),
+    }
+    font_map = fit(books, pairs, held_out, args.train, args.iterations, metadata)
+    # Page numbers drawn on the pages can be misread by a page or two, and a page paired
+    # with its neighbour's typed text teaches wrong letters. Re-pair each training book
+    # with the shift (within 3 pages) whose typed text the first map reads best, and refit.
+    moved = False
+    for b in args.train:
+        lines, typed, printed = books[b]
+        if printed is None:
+            continue
+        best = best_offset(font_map, lines, typed, range(printed - 3, printed + 4))
+        if best != printed:
+            print(f"book {b}: page numbers read off by {best - printed} page(s); re-paired")
+            pairs[b], moved = paired(lines, typed, best), True
+    if moved:
+        font_map = fit(books, pairs, held_out, args.train, args.iterations, metadata)
     if args.save:
         font_map.save(args.save)
 
     lm = default_models().spaced
     for b in args.test:
-        lines, typed, _ = books[b]
+        lines, typed, printed = books[b]
         if b not in held_out:
-            # An unseen book's typed text is only used for scoring: line its pages up with
-            # the decoded text, since printed page numbers may be missing or misread.
-            sample = sorted(i for i in lines if lines[i])[::5]
-            quick = {i: argmax_decode(font_map, lines[i]) for i in sample}
-            offset = max(
-                range(-40, 41),
-                key=lambda d: sum(word_scores(quick[i], typed.get(i - d, ""))[1] for i in sample),
-            )
-            pairs[b] = paired(lines, typed, offset)
+            # An unseen book's typed text is only used for scoring: its pages are lined up
+            # with the decoded text, trying every shift in -40..40 and the one the page
+            # numbers drawn on the pages give (they can be misread or count per volume).
+            candidates = {*range(-40, 41), *([printed] if printed is not None else [])}
+            pairs[b] = paired(lines, typed, best_offset(font_map, lines, typed, candidates))
         pages = pairs[b]
         chosen = sorted(held_out.get(b, set(pages)))
         if not chosen:
             print(f"book {b}: no pages to score")
             continue
         kind = "held-out pages" if b in held_out else "unseen book"
-        known = np.mean([font_map.known_share(pages[i][0]) for i in chosen])
-        for label, decode in (
-            ("symbol argmax", lambda ls: argmax_decode(font_map, ls)),
-            ("harfix decode", lambda ls: "\n".join(decode_line(x, font_map, lm) for x in ls)),
-        ):
-            decoded = {i: decode(pages[i][0]) for i in chosen}
-            scores = [word_scores(decoded[i], pages[i][1]) for i in chosen]
+        # As `harfix decode` reads them: glyphs of kept fonts that fail the check marked.
+        screened = dict(
+            zip(chosen, screen_kept_fonts([pages[i][0] for i in chosen], font_map), strict=True)
+        )
+        known = np.mean([font_map.coverage(screened[i])[0] for i in chosen])
+        argmax = {i: argmax_decode(font_map, pages[i][0]) for i in chosen}
+        decoded = {i: "\n".join(decode_line(x, font_map, lm) for x in screened[i]) for i in chosen}
+        for label, texts in (("symbol argmax", argmax), ("harfix decode", decoded)):
+            scores = [word_scores(texts[i], pages[i][1]) for i in chosen]
             print(
                 f"book {b} ({kind}, {len(scores)} pages, glyphs known {known:.0%}, {label}): "
                 f"word precision {np.mean([s[0] for s in scores]):.1%}, "
                 f"recall {np.mean([s[1] for s in scores]):.1%}"
             )
+        # `harfix decode`'s self-check: decoded text it trusts, against its accuracy.
+        trusted = [i for i in chosen if _trusted(decoded[i])]
+        for name, group in (
+            ("trusted", trusted),
+            ("not trusted", sorted(set(chosen) - set(trusted))),
+        ):
+            if group:
+                scores = [word_scores(decoded[i], pages[i][1]) for i in group]
+                print(
+                    f"book {b} ({kind}, {len(group)} pages {name} by the check): "
+                    f"word precision {np.mean([s[0] for s in scores]):.1%}, "
+                    f"lowest {min(s[0] for s in scores):.1%}"
+                )
         ocr = ocr_pages(b)
         if ocr:
             # Archive.org's page list can be shifted against the PDF: use the best shift.

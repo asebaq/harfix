@@ -1,6 +1,6 @@
 [project]
 name = "harfix"
-version = "0.3.0"
+version = "0.4.0"
 description = "Quality gate for Arabic PDF text layers: detect garbled, reversed, or unmapped Arabic before it reaches your index."
 readme = "README.md"
 license = "Apache-2.0"
@@ -36,6 +36,8 @@ dev = ["pytest>=8.3", "ruff>=0.7"]
 model = ["duckdb>=1.1", "arabic-reshaper>=3.0"]
 # Only needed to retrain the packaged font maps (scripts/train_font_maps.py).
 decoder = ["numpy>=1.26", "scipy>=1.11"]
+# Only needed to benchmark `check` on docling-parse output (scripts/benchmark.py extractors).
+extractors = ["docling-parse>=7.22"]
 
 [build-system]
 requires = ["hatchling>=1.27"]

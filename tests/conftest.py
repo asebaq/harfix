@@ -16,6 +16,17 @@ CLEAN_LINES = [
     "وتحفظ الأرقام والجداول كما هي لأن المكتبة لا تعدل النص الأصلي في هذه المرحلة",
 ]
 CLEAN = "\n".join(CLEAN_LINES)
+# Glyph names that fonts give Arabic letters, as docling-parse writes them for fonts
+# without a Unicode map.
+NAMES = {
+    "ء": "hamza", "آ": "alefwithmaddaabove", "أ": "alefwithhamzaabove",
+    "ؤ": "wawwithhamzaabove", "إ": "alefwithhamzabelow", "ئ": "yehwithhamzaabove",
+    "ا": "alef", "ب": "beh", "ة": "tehmarbuta", "ت": "teh", "ث": "theh", "ج": "jeem",
+    "ح": "hah", "خ": "khah", "د": "dal", "ذ": "thal", "ر": "reh", "ز": "zain", "س": "seen",
+    "ش": "sheen", "ص": "sad", "ض": "dad", "ط": "tah", "ظ": "zah", "ع": "ain", "غ": "ghain",
+    "ف": "feh", "ق": "qaf", "ك": "kaf", "ل": "lam", "م": "meem", "ن": "noon", "ه": "heh",
+    "و": "waw", "ى": "alefmaksura", "ي": "yeh",
+}  # fmt: skip
 
 
 def permute_letters(text: str, seed: int = 7) -> str:

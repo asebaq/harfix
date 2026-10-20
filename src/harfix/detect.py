@@ -7,6 +7,8 @@ from dataclasses import asdict, dataclass, field
 from functools import lru_cache
 from importlib import resources
 
+from .glyphnames import convert as convert_glyph_names
+from .glyphnames import glyph_code_words, glyph_name_words
 from .model import CharLM, ModelPair, default_models
 from .normalize import BOUNDARY, drop_ligature_forms, letters_only, profile, strip_decorations
 
@@ -56,6 +58,15 @@ class Thresholds:
     mixed_order_min_share: float = 0.2
     # Bidi formatting characters (embedding marks): invisible, but they stick to words.
     bidi_min_controls: int = 3
+    # Fonts without a Unicode map, as some extractors (docling-parse) write them: each
+    # glyph's name (`qafisolated`), which spells the letter, or its code as a number.
+    glyph_name_min_words: int = 8
+    glyph_code_min_words: int = 20
+    glyph_code_share: float = 0.6
+    # Pre-Unicode fonts split one word over several fonts; extractors that break text at
+    # font changes (docling-parse) then write one ASCII character per word.
+    fragment_min_words: int = 40
+    fragment_share: float = 0.6
 
     @classmethod
     def from_dict(cls, data: dict) -> Thresholds:
@@ -187,11 +198,35 @@ def assess_text(
 
     `order_known=True` is for an extractor's final output, where reading order is part of
     what is being checked. `order_known=False` is for raw PDF text-layer runs whose order
-    depends on the extractor; reading-order faults are not reported then.
+    depends on the extractor; reading-order faults are not reported then, and numbers are
+    taken as real digits, since a raw run writes an unmapped glyph as `(cid:N)`, never as
+    its code.
     """
     models = models or default_models()
     t = thresholds or default_thresholds()
+    reasons: list[str] = []
+    route = "keep"
+
+    def flag(reason: str, new_route: str) -> None:
+        nonlocal route
+        reasons.append(reason)
+        if ROUTES.index(new_route) > ROUTES.index(route):
+            route = new_route
+
+    names = glyph_name_words(text)
+    if names >= t.glyph_name_min_words:
+        # The names spell the letters: judge the text they spell.
+        flag("glyph_names", "repair")
+        text, _ = convert_glyph_names(text, models.spaced)
+    codes, words = glyph_code_words(text)
     prof = profile(text)
+    if (
+        order_known
+        and codes >= t.glyph_code_min_words
+        and codes > t.glyph_code_share * words
+        and codes > prof.arabic_letters
+    ):
+        flag("unmapped_glyphs", "ocr")
     metrics: dict[str, float | int | str] = {
         "arabic_letters": prof.arabic_letters,
         "arabic_ratio": round(prof.arabic_ratio, 4),
@@ -201,15 +236,9 @@ def assess_text(
         "latin_vowel_ratio": round(prof.latin_vowel_ratio, 4),
         "irregular_latin_word_ratio": round(prof.irregular_latin_word_ratio, 4),
         "bidi_controls": prof.bidi_controls,
+        "glyph_name_words": names,
+        "glyph_code_words": codes,
     }
-    reasons: list[str] = []
-    route = "keep"
-
-    def flag(reason: str, new_route: str) -> None:
-        nonlocal route
-        reasons.append(reason)
-        if ROUTES.index(new_route) > ROUTES.index(route):
-            route = new_route
 
     # These are visible even when too few Arabic letters survive to score.
     elongation = False
@@ -228,7 +257,14 @@ def assess_text(
     digit_legacy = (
         prof.symbol_words >= t.symbol_min_words and prof.symbol_word_ratio > t.symbol_word_ratio
     )
-    if prof.arabic_ratio < 0.2 and (symbol_legacy or ascii_legacy or digit_legacy):
+    # Latin text split into letters (a page of formulas) still has words between them.
+    fragment_legacy = (
+        prof.fragment_words >= t.fragment_min_words
+        and prof.fragment_words > t.fragment_share * prof.words
+        and prof.fragment_words > 4 * prof.latin_words
+    )
+    legacy = symbol_legacy or ascii_legacy or digit_legacy or fragment_legacy
+    if prof.arabic_ratio < 0.2 and legacy:
         flag("legacy_encoding", "ocr")
     if prof.bidi_controls >= t.bidi_min_controls:
         flag("bidi_controls", "repair")

@@ -1,6 +1,6 @@
 # harfix benchmark: Shamela books
 
-Generated 2026-10-18 by `scripts/benchmark.py`.
+Generated 2026-10-20 by `scripts/benchmark.py`.
 
 Labels come from typed text, not from harfix: a font run is `clean` when at least
 75% of its words occur in Shamela's transcriptions of the books (or in
@@ -18,8 +18,8 @@ Books: 57 with a PDF text layer and a typed text. Up to 40 pages per book, evenl
 
 | Unit | clean | broken | partial | unverified | unlabelled |
 |---|---:|---:|---:|---:|---:|
-| pages | 419 | 1161 | 485 | 77 | 138 |
-| font runs | 815 | 1720 | 856 | - | - |
+| pages | 419 | 1160 | 486 | 77 | 138 |
+| font runs | 815 | 1719 | 857 | - | - |
 
 ## harfix against the labels (clean and broken only)
 
@@ -28,21 +28,21 @@ Books are split by a hash of the PDF into `dev` (used when changing harfix rules
 
 | Split | Unit | Flagged broken | Flagged clean | Missed broken | Kept clean | Precision | Recall |
 |---|---|---:|---:|---:|---:|---:|---:|
-| dev | pages | 671 | 2 | 2 | 226 | 99.7% | 99.7% |
-| dev | font runs | 958 | 18 | 15 | 362 | 98.2% | 98.5% |
+| dev | pages | 670 | 2 | 2 | 226 | 99.7% | 99.7% |
+| dev | font runs | 957 | 18 | 15 | 362 | 98.2% | 98.5% |
 | test | pages | 487 | 6 | 1 | 185 | 98.8% | 99.8% |
 | test | font runs | 732 | 10 | 15 | 425 | 98.7% | 98.0% |
-| all | pages | 1158 | 8 | 3 | 411 | 99.3% | 99.7% |
-| all | font runs | 1690 | 28 | 30 | 787 | 98.4% | 98.3% |
+| all | pages | 1157 | 8 | 3 | 411 | 99.3% | 99.7% |
+| all | font runs | 1689 | 28 | 30 | 787 | 98.4% | 98.3% |
 
 ## Flagged font runs by reason
 
 | Reason | clean | broken | partial |
 |---|---:|---:|---:|
-| `legacy_encoding` | 0 | 663 | 0 |
+| `legacy_encoding` | 0 | 747 | 0 |
 | `presentation_forms` | 105 | 108 | 95 |
 | `quran_glyph_codes` | 6 | 35 | 27 |
-| `same_script_substitution` | 20 | 276 | 493 |
+| `same_script_substitution` | 20 | 275 | 494 |
 | `unmapped_elongation` | 11 | 3 | 16 |
 | `unmapped_glyphs` | 2 | 1060 | 18 |
 
@@ -101,7 +101,7 @@ Books are split by a hash of the PDF into `dev` (used when changing harfix rules
 | 1477 | test | 40 | 0/18/21/0/1 | 38 | 100.0% | 100.0% |
 | 538 | test | 40 | 0/37/0/0/3 | 37 | 100.0% | 100.0% |
 | 1122 | dev | 40 | 31/1/3/4/1 | 6 | 100.0% | 100.0% |
-| 1452 | dev | 40 | 0/32/7/0/1 | 40 | 100.0% | 100.0% |
+| 1452 | dev | 40 | 0/31/8/0/1 | 40 | 100.0% | 100.0% |
 | 1040 | dev | 40 | 0/2/38/0/0 | 39 | 100.0% | 100.0% |
 | 459+460+461+462+464+467+468+469+470+472+479+480+481+484 | dev | 40 | 36/0/4/0/0 | 0 | n/a | n/a |
 | 757 | dev | 40 | 13/0/22/3/2 | 14 | 0.0% | n/a |

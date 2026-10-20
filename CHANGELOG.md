@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.4.0
+
+- `check` and `repair` read the output of extractors that write unmapped glyphs other
+  than as `(cid:N)`, such as docling-parse (Docling's PDF parser):
+  - new reason `glyph_names` (route `repair`): Arabic glyph names written as text
+    (`yehfinalfehinitial`); `repair` spells them out in reading order;
+  - glyph codes written as decimal numbers are `unmapped_glyphs`;
+  - a pre-Unicode font written one character per text cell is `legacy_encoding`.
+  On docling-parse text of the Shamela benchmark, recall rose from 33.5% to 95.2% at
+  99.5% precision; pdfminer.six and pdftotext are unchanged (`reports/extractors.md`).
+- `harfix decode` also decodes fonts without a Unicode map whose glyphs carry Arabic
+  names in the PDF's font encoding: exact, no font map needed. Text in other fonts on a
+  decoded page (Unicode headings, page numbers) is kept, unless harfix's own check
+  rejects that font. `DecodedPage` gains `decoded_share`.
+- `scan` marks fonts and pages `harfix decode` can read (`"decodable": true`) and says so.
+- Font maps: training re-pairs pages whose printed page numbers were misread by a page;
+  two of the seven books had been trained on pages paired with their neighbours' text.
+  The packaged map is retrained: left-out books now decode at 78-85% word precision.
+- `scripts/benchmark.py extractors` and `decode`: `check` on three extractors, and
+  `decode` on the labelled pages.
+- Fixed: `decode_pdf(pages=[])` decoded every page.
+
 ## 0.3.0
 
 - `harfix decode` and `decode_pdf()`: decode pre-Unicode Arabic fonts without OCR, with a

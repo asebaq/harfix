@@ -31,11 +31,17 @@ def _encode(text: str) -> str:
     )
 
 
-def build_pdf(pages: list[list[tuple[str, str]]], letter_maps: dict[str, dict[str, str]]) -> bytes:
+def build_pdf(
+    pages: list[list[tuple[str, str]]],
+    letter_maps: dict[str, dict[str, str]],
+    glyph_names: dict[str, dict[str, str]] | None = None,
+) -> bytes:
     """`pages`: per page, (font name, text line) pairs; an empty page gets an image only.
 
-    `letter_maps[font]` says which letter each letter's code extracts as.
+    `letter_maps[font]` says which letter each letter's code extracts as. A font in
+    `glyph_names` has no Unicode map; its encoding names each letter's glyph instead.
     """
+    glyph_names = glyph_names or {}
     objects: list[bytes] = []
 
     def add(body: bytes) -> int:
@@ -46,18 +52,22 @@ def build_pdf(pages: list[list[tuple[str, str]]], letter_maps: dict[str, dict[st
         return f"<< /Length {len(data)} {extra}>>\nstream\n".encode() + data + b"\nendstream"
 
     font_refs = {}
-    for name, letter_map in letter_maps.items():
-        mapping = {0x20: " "} | {CODES[letter]: shown for letter, shown in letter_map.items()}
-        cmap = add(stream(_to_unicode(mapping)))
+    for name, letter_map in {**letter_maps, **dict.fromkeys(glyph_names, {})}.items():
         widths = " ".join(["600"] * (len(LETTERS) + 1))
         descriptor = add(
             f"<< /Type /FontDescriptor /FontName /{name} /Flags 32 /FontBBox [0 -200 1000 800] "
             "/ItalicAngle 0 /Ascent 800 /Descent -200 /CapHeight 700 /StemV 80 >>".encode()
         )
+        if name in glyph_names:
+            names = " ".join(f"{CODES[a]} /{n}" for a, n in glyph_names[name].items())
+            subtype, mapping_entry = "TrueType", f"/Encoding << /Differences [{names}] >>"
+        else:
+            mapping = {0x20: " "} | {CODES[a]: shown for a, shown in letter_map.items()}
+            subtype, mapping_entry = "Type1", f"/ToUnicode {add(stream(_to_unicode(mapping)))} 0 R"
         font_refs[name] = add(
-            f"<< /Type /Font /Subtype /Type1 /BaseFont /{name} /FirstChar 32 "
+            f"<< /Type /Font /Subtype /{subtype} /BaseFont /{name} /FirstChar 32 "
             f"/LastChar {0x20 + len(LETTERS)} /Widths [{widths}] "
-            f"/FontDescriptor {descriptor} 0 R /ToUnicode {cmap} 0 R >>".encode()
+            f"/FontDescriptor {descriptor} 0 R {mapping_entry} >>".encode()
         )
     image = add(
         stream(
