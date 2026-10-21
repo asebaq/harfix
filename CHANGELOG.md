@@ -6,6 +6,16 @@
   one-glyph-per-word `Advzy…` subsets are learned word by word from the typed quotations
   (1500 glyphs). On books 1575 and 1576, 64-74% of the quoted words come out (16-17%
   before); on a book held out of training, 20-28%. `scripts/train_font_maps.py` learns them.
+- The packaged map reads `HeshamNormal`, a pre-Unicode heading font of six journal
+  issues in the corpus, keyed by its glyph names so it holds across subsets and PDFs.
+  On a held-out book, 64-89% of the heading words come out right; page recall rises
+  1-2.5 points, precision moves -0.8 to +0.1.
+- `decode` reads each glyph of fake-bold text once (glyphs drawn several times a
+  fraction of a point apart), and reads `c128`-style glyph names by their original code
+  instead of the subset's.
+- `scripts/train_font_maps.py` pairs PDF pages with the typed text by their text before
+  their page numbers, feeds named glyphs to EM as their letters, and gains `--families`
+  and `--add-to`.
 
 ## 0.5.0
 

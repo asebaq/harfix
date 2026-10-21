@@ -128,8 +128,8 @@ and the `AQS…` fonts, which are not read).
 The table is not shipped: neither Quran.com nor QUL publishes a licence for the glyph
 codes, and permission to redistribute them has been asked
 (TarteelAI/quranic-universal-library#909). Without it, Quran page fonts stay unread.
-Built locally, it adds 42 trusted pages to the coverage below (459 broken pages, of which
-450 label clean), and decodes 4 clean pages, which still label clean. 8 of the added
+Built locally, it adds 43 trusted pages to the coverage below (461 broken pages, of which
+452 label clean), and decodes 4 clean pages, which still label clean. 8 of the added
 trusted pages do not label clean. On the 4 of them in book 30131, the body font has a
 partly wrong Unicode map (`الؿال` for `المال`) that harfix's check passes, so decoding the
 quotations makes a page trusted whose body is not right; the other 4 (books 255, 806 and
@@ -160,6 +160,56 @@ another book only the shared ones are read. The count is loose (a quoted word co
 it occurs anywhere on the decoded page). The coverage table below is unchanged: with the
 local Quran table, its output is identical with the old and the new map.
 
+## Pre-Unicode fonts with Latin glyph names: `HeshamNormal`
+
+Six journal issues in the corpus (books 909, 929, 936, 937, 944, 946) set headings in
+`HeshamNormal`, a pre-Unicode font whose Arabic glyphs sit on Latin slots (`<` is the
+space, `]` alef, `Ö` lam: `]ÖË’Ø<]Ön^Þê` is الفصل الثاني). Each PDF embeds several subsets
+of it, and each subset renumbers its glyphs (code 2 is `aacute` in one subset, `Eth` in
+another), but the glyph names stay: pdfminer extracts them as the Latin character they
+name, so a map learned on these characters holds for every PDF of the font. Names that
+give only the original code (`c128`) are now read as that code (`\x80`) instead of the
+subset's `(cid:N)`: in book 909 that leaves 9 unread `HeshamNormal` / `MCSTaybahS` glyphs,
+against 211 before.
+
+Training:
+
+- Page numbers do not pair these PDFs with the typed text: the digits read give offsets
+  of 34, 77 and -115 pages in books 909, 937 and 946 and none in 944, where the text
+  gives 0. `train_font_maps.py` now pairs a
+  PDF by its text first: each fifth page, read with the packaged map and the glyph names,
+  goes with the typed page sharing most of its words, and the most common shift wins. On
+  the seven `AXt` books it gives the page numbers' shift, or the one the re-pairing step
+  found (+1 page for 1575 and 1576).
+- Named glyphs are read exactly, but some draw more letters than EM lets a symbol emit;
+  they enter EM as one symbol per letter, each starting out on its letter. Before this,
+  the first fit on these books learned 3 symbols.
+- Headings are often set in fake bold: each glyph drawn several times a fraction of a
+  point apart (20-33% of the `HeshamNormal` glyphs in books 909, 929 and 944 are extra
+  copies). `glyph_lines` now keeps one copy, for every font.
+- `--families HeshamNormal MCSTaybahS_Unormal.` keeps only those fonts (EM also passes
+  `AGAArabesque` and two Unicode fonts as legacy on these pages); `--add-to` adds them to
+  the packaged map, whose other fonts and gaps are kept. Map size 20 KB → 21 KB.
+
+Each book held out in turn (trained on the other four of 909, 929, 937, 944, 946):
+
+| Book | Hesham words decoded | Found on the typed page | Page precision before → after | Page recall before → after |
+|---|---:|---:|---:|---:|
+| 909 | 258 | 82% | 93.4% → 92.7% | 78.5% → 81.0% |
+| 929 | 153 | 89% | 91.3% → 91.4% | 81.9% → 82.8% |
+| 937 | 311 | 64% | 97.8% → 97.1% | 88.8% → 89.8% |
+| 944 | 364 | 70% | 93.4% → 92.6% | 76.2% → 77.4% |
+| 946 | 153 | 87% | 96.6% → 96.2% | 82.6% → 83.7% |
+
+Words of three letters or more decoded from `HeshamNormal` glyphs alone; a word counts if
+it occurs on the typed page. Page scores are over all paired pages (most of their text is
+in named glyphs, which decode as before). The remaining errors drop or change a letter:
+`القرن` (القرآن), `التفسب` (التفسير), `السعوية` (السعودية), probably glyphs seen rarely in
+the four training books. `MCSTaybahS_Unormal` is not learned (see below). On the
+benchmark, only book 1258 changes (one more broken page decoded and clean), from the
+overprint and `c128` changes; the Hesham books' benchmark pages were already decoded and
+trusted through their named body font, and stay so.
+
 ## Coverage of the benchmark
 
 Command: `scripts/benchmark.py decode`. All labelled pages of the benchmark
@@ -170,7 +220,7 @@ the packaged map, so their rows are not held out.
 
 | Page label | Decoded and trusted | Of which clean after decoding | Decoded, not trusted | Not decoded |
 |---|---:|---:|---:|---:|
-| broken | 417 | 416 | 6 | 734 |
+| broken | 418 | 417 | 6 | 733 |
 | clean | 0 | 0 | 0 | 420 |
 
 | Book | Fonts | Decoded and trusted pages | Clean after decoding |
@@ -185,7 +235,7 @@ the packaged map, so their rows are not held out.
 | 937 | named glyphs | 37 | 37 |
 | 944 | named glyphs | 26 | 26 |
 | 946 | named glyphs | 37 | 37 |
-| 1258 | named glyphs | 35 | 35 |
+| 1258 | named glyphs | 36 | 36 |
 | 30628 | named glyphs | 36 | 35 |
 
 So `decode` reads 36% of the benchmark's broken pages (27% in 0.4.0) and none of its clean
@@ -214,9 +264,9 @@ Fonts not decoded yet:
   held-out book. `Adv.QAL603` and `Font575` / `Font445`, which EM learns as producing
   nothing, are ornaments and running heads (book title, chapter, page number) that the
   typed editions leave out; they are dropped.
-- **`HeshamNormal`, `MCSTaybahS_Unormal`.** Their glyphs carry Latin names (`eacute`,
-  `Idieresis`): pre-Unicode fonts like `AXt`. If the names are the same in every PDF that
-  embeds them, a map keyed by glyph name could be learned once for all of them.
+- **`MCSTaybahS_Unormal`.** EM learns no letters for it from the typed editions; the
+  lines of it looked at are page heads (journal name, issue), which the typed editions
+  leave out.
 - **Fonts with neither names nor a Unicode map** (`AL-Mohanad`, `AGAArabesque`, fonts
   pdfminer cannot name): only their codes are left.
 

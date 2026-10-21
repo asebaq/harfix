@@ -3,10 +3,14 @@
 Usage:
     uv run --group decoder python scripts/train_font_maps.py --train 9 10 \
         --test 18 1576 --save src/harfix/data/font_maps.json.gz
+    # The packaged map: the AXt books, then HeshamNormal added to it.
+    ... --train 9 10 18 19 1291 1575 1576 --save src/harfix/data/font_maps.json.gz
+    ... --train 909 929 937 944 946 --families HeshamNormal MCSTaybahS_Unormal. \
+        --add-to src/harfix/data/font_maps.json.gz --save src/harfix/data/font_maps.json.gz
 
 Pages are read into symbols by `harfix.decode.glyph_lines`. Shamela's typed text of the
-same printed page gives the letters (training pages are matched through the page numbers
-drawn on them). EM over a monotone alignment learns, per symbol, the probability of
+same printed page gives the letters (training pages are matched by their text, or else
+the page numbers drawn on them). EM over a monotone alignment learns, per symbol, the probability of
 producing nothing (diacritics, elongation), one letter, or a two-letter ligature; insertions
 absorb typed text the page does not draw. The exported map is decoded exactly as
 `harfix decode` does (`harfix.decode.decode_line`), so the scores below are the shipped
@@ -29,10 +33,20 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 import numpy as np
-from pdfminer.high_level import extract_pages
 from scipy.signal import lfilter
 
-from harfix.decode import SPACE, FontMap, decode_line, glyph_lines, is_gap, screen_kept_fonts
+from harfix.decode import (
+    _EXACT,
+    SPACE,
+    FontMap,
+    _layouts,
+    decode_line,
+    default_font_map,
+    font_glyph_names,
+    glyph_lines,
+    is_gap,
+    screen_kept_fonts,
+)
 from harfix.detect import assess_text
 from harfix.model import default_models
 from harfix.normalize import letters_only
@@ -61,13 +75,13 @@ def printed_numbers(lines: list[list[str]]) -> set[int]:
     return out
 
 
-def pdf_pages(pdf: Path, pages: list[int]) -> dict[int, list[list[str]]]:
-    out = {}
-    for number, layout in zip(
-        pages, extract_pages(str(pdf), page_numbers=[p - 1 for p in pages]), strict=True
-    ):
-        out[number] = glyph_lines(layout)
-    return out
+def pdf_pages(pdf: Path) -> dict[int, list[list[str]]]:
+    """Every page's glyph lines, named glyphs read as `harfix decode` reads them."""
+    names = font_glyph_names(pdf)
+    return {
+        number: glyph_lines(layout, names)
+        for number, layout in enumerate(_layouts(pdf, None, names), start=1)
+    }
 
 
 # ---------------------------------------------------------------- typed text
@@ -186,6 +200,9 @@ class Model:
             if s in (SPACE, "gap:wide", "gap:narrow"):
                 e1[row] = 0.01 / len(self.alphabet)
                 e1[row, self.letter[SPACE]] = 0.9 if s != "gap:narrow" else 0.5
+            elif s.startswith(LITERAL) and s[len(LITERAL) :] in self.letter:
+                e0[row], e1[row] = 0.01, 0.01 / len(self.alphabet)
+                e1[row, self.letter[s[len(LITERAL) :]]] = 0.9
         self.e0 = np.concatenate([self.e0, e0])
         self.e1 = np.vstack([self.e1, e1])
         self.e2 = np.vstack([self.e2, e2])
@@ -287,10 +304,10 @@ class Model:
         likely outputs, for legacy font families only: families whose glyphs extract as
         non-Arabic characters and of which at least 30% decode to Arabic letters. Unicode
         Arabic fonts and Latin fonts on the same pages are left out, so their pages are
-        never decoded."""
+        never decoded; so are glyphs read exactly (named, Quran page fonts)."""
         outputs: dict[str, list[tuple[str, float]]] = {}
         for s, i in self.symbols.items():
-            if self.counts[i] < min_count:
+            if self.counts[i] < min_count or s.startswith(_EXACT):
                 continue
             cands = [(self.e0[i], "")]
             cands += [(p, self.alphabet[j]) for j, p in enumerate(self.e1[i])]
@@ -315,8 +332,22 @@ class Model:
         return FontMap(outputs, {**metadata, "families": sorted(legacy)})
 
 
+# A glyph read exactly (named, Quran page font) may draw several letters, more than a
+# symbol can emit: it enters EM as one symbol per letter, each starting out on its letter.
+LITERAL = "letter:"
+_PLAIN = FontMap({}, {})
+
+
+def _literal(symbol: str) -> list[str]:
+    if not symbol.startswith(_EXACT):
+        return [symbol]
+    opts = _PLAIN.options(symbol)
+    text = letters_only(opts[0][0]) if opts else ""
+    return [SPACE if c == SPACE else LITERAL + c for c in text]
+
+
 def example(model: Model, lines: list[list[str]], letters: str):
-    symbols = [s for line in lines for s in [*line, SPACE]]
+    symbols = [x for line in lines for s in [*line, SPACE] for x in _literal(s)]
     model.add_symbols(symbols)
     sym = [model.symbols[s] for s in symbols]
     let = np.array([model.letter[c] for c in letters])
@@ -347,18 +378,14 @@ def _manifest_entry(book: str) -> tuple[Path, dict]:
 
 
 def load(book: str):
-    """PDF glyph lines by page, typed pages by printed number, and the page offset read
-    from printed page numbers (None if none were found)."""
+    """PDF glyph lines by page, typed pages by printed number, and the page offset: read
+    from the text where the packaged map and named glyphs read enough of it, else from
+    printed page numbers (None if neither works). Page numbers alone can mislead: digits
+    in a pre-Unicode font read as other numbers."""
     folder, entry = _manifest_entry(book)
-    pdf = folder / entry["file"]
-    from pdfminer.pdfdocument import PDFDocument
-    from pdfminer.pdfpage import PDFPage
-    from pdfminer.pdfparser import PDFParser
-
-    with pdf.open("rb") as fh:
-        count = sum(1 for _ in PDFPage.create_pages(PDFDocument(PDFParser(fh))))
-    lines = pdf_pages(pdf, list(range(1, count + 1)))
-    return lines, typed_pages(book), page_offset(lines)
+    lines, typed = pdf_pages(folder / entry["file"]), typed_pages(book)
+    offset = text_offset(lines, typed)
+    return lines, typed, page_offset(lines) if offset is None else offset
 
 
 def paired(lines, typed, offset) -> dict[int, tuple[list[list[str]], str]]:
@@ -372,9 +399,28 @@ def paired(lines, typed, offset) -> dict[int, tuple[list[list[str]], str]]:
 
 
 def argmax_decode(font_map: FontMap, lines: list[list[str]]) -> str:
+    """Each readable symbol's likeliest output: learned, named, or kept as it is."""
     return "\n".join(
-        "".join(font_map.outputs[s][0][0] for s in line if s in font_map.outputs) for line in lines
+        "".join(opts[0][0] for s in line if (opts := font_map.options(s))) for line in lines
     )
+
+
+def text_offset(lines, typed) -> int | None:
+    """The page shift read from the text: where page numbers are not drawn in a font
+    `printed_numbers` reads (named digits, a pre-Unicode font), each sampled page is
+    matched to the typed page sharing most of its readable words."""
+    font_map = default_font_map()
+    words = {p: set(t.split()) for p, t in typed.items()}
+    diffs: Counter = Counter()
+    for index in sorted(i for i in lines if lines[i])[::5]:
+        reading = argmax_decode(font_map, lines[index])
+        page = {w for w in letters_only(reading).split() if len(w) > 2}
+        if len(page) < 10:
+            continue
+        number, hits = max(((p, len(page & w)) for p, w in words.items()), key=lambda x: x[1])
+        if hits >= len(page) / 2:
+            diffs[index - number] += 1
+    return diffs.most_common(1)[0][0] if diffs else None
 
 
 def best_offset(font_map: FontMap, lines, typed, candidates) -> int:
@@ -418,6 +464,18 @@ def _trusted(text: str) -> bool:
     return verdict.sufficient and verdict.route in ("keep", "repair")
 
 
+def add_to(base: FontMap, learned: FontMap) -> FontMap:
+    """`base` with `learned`'s fonts added. Gaps stay `base`'s: on a line with glyphs of
+    both, one reading of the gaps applies."""
+    outputs = {**base.outputs, **{s: o for s, o in learned.outputs.items() if not is_gap(s)}}
+    metadata = {
+        **base.metadata,
+        "families": sorted(set(base.metadata.get("families", [])) | learned.families),
+        "added": [*base.metadata.get("added", []), learned.metadata],
+    }
+    return FontMap(outputs, metadata)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--train", nargs="+", required=True, help="Shamela book ids")
@@ -425,6 +483,14 @@ def main() -> None:
     parser.add_argument("--iterations", type=int, default=8)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--save", type=Path, help="write the learned font map here")
+    parser.add_argument(
+        "--add-to",
+        type=Path,
+        help="add the learned fonts to this map (its other fonts and its gaps are kept)",
+    )
+    parser.add_argument(
+        "--families", nargs="+", help="keep only these learned font families (and gaps)"
+    )
     args = parser.parse_args()
 
     books = {b: load(b) for b in set(args.train) | set(args.test)}
@@ -472,10 +538,21 @@ def main() -> None:
     verse_fonts = {f for f, n in inside.items() if n >= 0.9 * everywhere[f]}
     for s in [s for s in font_map.outputs if s.split(":", 1)[0] in verse_fonts]:
         del font_map.outputs[s]
-    font_map.outputs.update({s: [(w + SPACE, 0.0)] for s, w in verse_words.items()})
-    font_map.outputs.update({VERSE_OPEN: [("", 0.0)], VERSE_CLOSE: [("", 0.0)]})
-    font_map.metadata["verse_glyphs"] = len(verse_words)
+    if verse_words:
+        font_map.outputs.update({s: [(w + SPACE, 0.0)] for s, w in verse_words.items()})
+        font_map.outputs.update({VERSE_OPEN: [("", 0.0)], VERSE_CLOSE: [("", 0.0)]})
+        font_map.metadata["verse_glyphs"] = len(verse_words)
     print(f"verse glyphs learned: {len(verse_words)}")
+    if args.families:
+        kept = {
+            s: o
+            for s, o in font_map.outputs.items()
+            if is_gap(s) or s.split(":", 1)[0] in args.families
+        }
+        families = sorted({s.split(":", 1)[0] for s in kept if not is_gap(s)})
+        font_map = FontMap(kept, {**font_map.metadata, "families": families})
+    if args.add_to:
+        font_map = add_to(FontMap.load(args.add_to), font_map)
     if args.save:
         font_map.save(args.save)
 

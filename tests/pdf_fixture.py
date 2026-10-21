@@ -35,12 +35,14 @@ def build_pdf(
     pages: list[list[tuple[str, str]]],
     letter_maps: dict[str, dict[str, str]],
     glyph_names: dict[str, dict[str, str]] | None = None,
+    overprint: bool = False,
 ) -> bytes:
     """`pages`: per page, (font name, text line) pairs; an empty page gets an image only.
 
     `letter_maps[font]` says which letter each letter's code extracts as (a ToUnicode
     map). `glyph_names[font]` names each letter's glyph in the font's encoding; a font in
-    both has both.
+    both has both. `overprint` draws every line a second time, 0.3 pt to the right (fake
+    bold).
     """
     glyph_names = glyph_names or {}
     objects: list[bytes] = []
@@ -62,7 +64,7 @@ def build_pdf(
         entries, subtype = [], "Type1"
         if name in glyph_names:
             names = " ".join(f"{CODES[a]} /{n}" for a, n in glyph_names[name].items())
-            entries.append(f"/Encoding << /Differences [{names}] >>")
+            entries.append(f"/Encoding << /Differences [32 /space {names}] >>")
             subtype = "TrueType"
         if name in letter_maps:
             mapping = {0x20: " "} | {CODES[a]: shown for a, shown in letter_maps[name].items()}
@@ -88,7 +90,10 @@ def build_pdf(
         if lines:
             ops = ["BT", "14 TL", "40 780 Td"]
             for font, text in lines:
-                ops.append(f"/{font} 9 Tf <{_encode(text)}> Tj T*")
+                ops.append(f"/{font} 9 Tf <{_encode(text)}> Tj")
+                if overprint:
+                    ops.append(f"0.3 0 Td <{_encode(text)}> Tj -0.3 0 Td")
+                ops.append("T*")
             ops.append("ET")
         else:
             ops = ["q 200 0 0 200 100 500 cm /Im1 Do Q"]

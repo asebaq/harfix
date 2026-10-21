@@ -110,7 +110,7 @@ def glyph_lines(
         lines[min(peaks, key=lambda p: abs(p - c.matrix[5]))].append(c)
     out = []
     for y in sorted(lines, reverse=True):
-        row = sorted(lines[y], key=lambda c: -(c.x0 + c.x1) / 2)
+        row = _drop_overprints(sorted(lines[y], key=lambda c: -(c.x0 + c.x1) / 2), size)
         # Gaps come from glyphs on the body baseline only (marks on other offsets sit over
         # them), as two symbols by width: spaces between words, or the gap after a letter
         # that does not join inside a word. The font map learns which is which.
@@ -129,6 +129,22 @@ def glyph_lines(
                 symbols.append(cuts.pop(0)[1])
             symbols.append(_symbol(c, glyph_names))
         out.append(symbols)
+    return out
+
+
+def _drop_overprints(row: list[LTChar], size: float) -> list[LTChar]:
+    """The row without the extra copies of overprinted glyphs: headings set in fake bold
+    draw each glyph several times, a fraction of a point apart."""
+    out: list[LTChar] = []
+    for c in row:
+        if not any(
+            k.fontname == c.fontname
+            and k.get_text() == c.get_text()
+            and abs(k.x0 - c.x0) < 0.15 * size
+            and abs(k.y0 - c.y0) < 0.15 * size
+            for k in out[-4:]
+        ):
+            out.append(c)
     return out
 
 
@@ -230,6 +246,9 @@ def font_glyph_names(path: str | Path) -> dict[str, dict[int, str]]:
 # codes pdfminer would extract alike (a named `aleffinal` on code 32 and a real space)
 # stay apart.
 _MARKER = 0xF0000
+# Glyph names that give a glyph's code in the original font (`c128`), which a subset
+# renumbers; pdfminer, which knows no character for them, extracts `(cid:N)` by the new code.
+_CODE_NAME = re.compile(r"c(\d{2,3})")
 
 
 class _NamedGlyphs(PDFResourceManager):
@@ -239,12 +258,39 @@ class _NamedGlyphs(PDFResourceManager):
 
     def get_font(self, objid, spec):
         font = super().get_font(objid, spec)
+        if getattr(font, "_harfix_named", False):
+            return font
+        font._harfix_named = True
         names = self._names.get(font.fontname)
-        if names and not getattr(font, "_harfix_named", False):
+        codes = {} if names else _code_names(spec)
+        if names or codes:
             plain = font.to_unichr
-            font.to_unichr = lambda cid: chr(_MARKER + cid) if cid in names else plain(cid)
-            font._harfix_named = True
+
+            def to_unichr(cid: int) -> str:
+                if names and cid in names:
+                    return chr(_MARKER + cid)
+                if cid in codes:
+                    return codes[cid]
+                return plain(cid)
+
+            font.to_unichr = to_unichr
         return font
+
+
+def _code_names(spec) -> dict[int, str]:
+    """Code to the original font's character, for a simple font's `cNNN` glyph names."""
+    encoding = resolve1(spec.get("Encoding")) if isinstance(spec, dict) else None
+    if not isinstance(encoding, dict):
+        return {}
+    out, code = {}, 0
+    for item in resolve1(encoding.get("Differences")) or []:
+        if isinstance(item, int):
+            code = item
+        elif hasattr(item, "name"):
+            if (m := _CODE_NAME.fullmatch(item.name)) and 32 <= int(m.group(1)) < 256:
+                out[code] = chr(int(m.group(1)))
+            code += 1
+    return out
 
 
 def _layouts(

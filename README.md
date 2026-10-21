@@ -279,9 +279,9 @@ typed text of the same pages, words as multisets:
 
 The seventh, book 1291, does not decode when left out, and the check rejects 67 of its
 69 pages. The packaged map is trained on all seven. On the benchmark's labelled pages,
-`decode` reads 417 of the 1,160 broken pages (36%: four learned-map books, eight books
-with named glyphs), 416 of them label clean after decoding, and it decodes none of the
-420 clean pages. With the Quran table built, it reads 42 more.
+`decode` reads 418 of the 1,160 broken pages (36%: four learned-map books, eight books
+with named glyphs), 417 of them label clean after decoding, and it decodes none of the
+420 clean pages. With the Quran table built, it reads 43 more.
 
 ### Synthetic corruptions
 
@@ -322,15 +322,16 @@ On the test split, windows of at least 80 Arabic letters:
 - `check` splits text without form feeds at line ends, so a single very long line is
   judged as one piece.
 - Scanned pages are routed to OCR but their image quality is not assessed.
-- `decode` knows one family of pre-Unicode fonts (`AXt…` / `Adv…`, seven books) and three
-  glyph-naming schemes. Quran quotations in those books are set in many small `Advzy…`
-  font subsets, one glyph per word, learned per book: 64-74% of their words come out on
-  the training books 1575 and 1576, 20-28% when the book is held out of training. Running
-  heads in `Font575` / `Adv.QAL603` are dropped. Pre-Unicode fonts with Latin
-  glyph names (`HeshamNormal`, `MCSTaybahS_Unormal`) are not decoded, nor Quran page
-  fonts until their table is shipped. harfix's check passes decoded text whose letters
-  read as Arabic; a page with a fifth of its words wrong, or a body font with a few
-  swapped letters next to a decoded Quran quotation, can still be trusted.
+- `decode` knows one family of pre-Unicode fonts (`AXt…` / `Adv…`, seven books), the
+  heading font `HeshamNormal`, and three glyph-naming schemes. Quran quotations in the
+  `AXt` books are set in many small `Advzy…` font subsets, one glyph per word, learned per
+  book: 64-74% of their words come out on the training books 1575 and 1576, 20-28% when
+  the book is held out of training. Running heads in `Font575` / `Adv.QAL603` are dropped.
+  `HeshamNormal` headings come out with 64-89% of their words right on a held-out book.
+  `MCSTaybahS_Unormal` is not decoded, nor Quran page fonts until their table is shipped.
+  harfix's check passes decoded text whose letters read as Arabic; a page with a fifth
+  of its words wrong, or a body font with a few swapped letters next to a decoded Quran
+  quotation, can still be trusted.
 - PDF parsing uses pdfminer.six: about 0.1–0.2 s per page on the documents above.
 
 ## Roadmap

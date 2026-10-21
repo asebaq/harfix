@@ -40,6 +40,33 @@ def test_known_legacy_font_is_decoded_and_passes_the_check(tmp_path):
     assert page.trusted
 
 
+def test_overprinted_glyphs_are_read_once(tmp_path):
+    # Fake bold draws each glyph twice, a fraction of a point apart.
+    path = tmp_path / "bold.pdf"
+    pages = [[("Legacy", line[::-1]) for line in CLEAN_LINES]]
+    path.write_bytes(build_pdf(pages, {"Legacy": ASCII_LEGACY}, overprint=True))
+    assert decode_pdf(path, font_map=LEGACY_MAP)[0].text.split("\n") == CLEAN_LINES
+
+
+def test_glyphs_named_by_their_original_code_are_read_by_that_code(tmp_path):
+    # A subset renumbers the glyphs of a pre-Unicode font; names like `c161` keep the
+    # original code, which is what a map learned on other PDFs of the font knows.
+    original = {letter: 161 + i for i, letter in enumerate(LETTERS)}
+    names = {letter: f"c{code}" for letter, code in original.items()}
+    by_code = FontMap(
+        {
+            **{f"Legacy:{chr(code)}": [(letter, 0.0)] for letter, code in original.items()},
+            **{gap: LEGACY_MAP.outputs[gap] for gap in (GAP_WIDE, GAP_NARROW, SPACE)},
+        },
+        {},
+    )
+    path = tmp_path / "subset.pdf"
+    path.write_bytes(
+        build_pdf([[("Legacy", line[::-1]) for line in CLEAN_LINES]], {}, {"Legacy": names})
+    )
+    assert decode_pdf(path, font_map=by_code)[0].text.split("\n") == CLEAN_LINES
+
+
 def test_pages_in_fonts_the_map_does_not_know_are_not_decoded(tmp_path):
     path = tmp_path / "unicode.pdf"
     identity = {letter: letter for letter in LETTERS}
