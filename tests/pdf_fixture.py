@@ -38,8 +38,9 @@ def build_pdf(
 ) -> bytes:
     """`pages`: per page, (font name, text line) pairs; an empty page gets an image only.
 
-    `letter_maps[font]` says which letter each letter's code extracts as. A font in
-    `glyph_names` has no Unicode map; its encoding names each letter's glyph instead.
+    `letter_maps[font]` says which letter each letter's code extracts as (a ToUnicode
+    map). `glyph_names[font]` names each letter's glyph in the font's encoding; a font in
+    both has both.
     """
     glyph_names = glyph_names or {}
     objects: list[bytes] = []
@@ -52,18 +53,21 @@ def build_pdf(
         return f"<< /Length {len(data)} {extra}>>\nstream\n".encode() + data + b"\nendstream"
 
     font_refs = {}
-    for name, letter_map in {**letter_maps, **dict.fromkeys(glyph_names, {})}.items():
+    for name in {**letter_maps, **glyph_names}:
         widths = " ".join(["600"] * (len(LETTERS) + 1))
         descriptor = add(
             f"<< /Type /FontDescriptor /FontName /{name} /Flags 32 /FontBBox [0 -200 1000 800] "
             "/ItalicAngle 0 /Ascent 800 /Descent -200 /CapHeight 700 /StemV 80 >>".encode()
         )
+        entries, subtype = [], "Type1"
         if name in glyph_names:
             names = " ".join(f"{CODES[a]} /{n}" for a, n in glyph_names[name].items())
-            subtype, mapping_entry = "TrueType", f"/Encoding << /Differences [{names}] >>"
-        else:
-            mapping = {0x20: " "} | {CODES[a]: shown for a, shown in letter_map.items()}
-            subtype, mapping_entry = "Type1", f"/ToUnicode {add(stream(_to_unicode(mapping)))} 0 R"
+            entries.append(f"/Encoding << /Differences [{names}] >>")
+            subtype = "TrueType"
+        if name in letter_maps:
+            mapping = {0x20: " "} | {CODES[a]: shown for a, shown in letter_maps[name].items()}
+            entries.append(f"/ToUnicode {add(stream(_to_unicode(mapping)))} 0 R")
+        mapping_entry = " ".join(entries)
         font_refs[name] = add(
             f"<< /Type /Font /Subtype /{subtype} /BaseFont /{name} /FirstChar 32 "
             f"/LastChar {0x20 + len(LETTERS)} /Widths [{widths}] "

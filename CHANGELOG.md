@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.0
+
+- `decode` reads two more glyph-naming schemes: Linotype Lotus style (`lamI`,
+  `alifhamAU`, `tamarF`, `oneA`) and form-first (`fnalef`, `midmeem`), plus marks,
+  elongation and the fonts' own sign names. Names now win over a font's Unicode map, which
+  in these books is partial or wrong. On the benchmark, `decode` reads 417 broken pages,
+  up from 310 (`reports/font_decoder.md`); it still decodes no clean page.
+- `check` and `repair` read the same schemes when docling-parse glues them into the text
+  (`tamarFbaIalifF`): 291 broken docling-parse pages are now repaired instead of sent to
+  OCR, at 95.0% recall and 99.5% precision.
+- Quran page fonts (`QCF_Pnnn`, `QCF2nnn`) decode word by word with a table built by
+  `scripts/build_quran_glyphs.py`. The table is not shipped yet: permission to
+  redistribute the glyph codes has been asked (TarteelAI/quranic-universal-library#909).
+  A page with at least five glyphs read exactly (named or Quran glyphs) is decoded even
+  when most of its text is in other, readable fonts.
+- `FontMap.coverage` also returns how many glyphs are read exactly;
+  `FontMap.wants_decoding` says whether a page has glyphs to decode.
+
 ## 0.4.0
 
 - `check` and `repair` read the output of extractors that write unmapped glyphs other

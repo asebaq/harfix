@@ -8,3 +8,5 @@ dist/
 .ruff_cache/
 .DS_Store
 corpus/
+# Built by scripts/build_quran_glyphs.py; not redistributed until its source clears it.
+src/harfix/data/quran_glyphs.json.gz

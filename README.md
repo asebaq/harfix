@@ -105,13 +105,16 @@ not repaired p11: reextract (bidi_controls, presentation_forms, lam_alef_transpo
 ```
 
 Decode fonts without a usable Unicode map, without OCR. `harfix decode` reads the glyphs
-of each page and decodes two kinds of font: pre-Unicode fonts, with font maps learned from
-typed editions of other books in the same fonts (packaged: the `AXt…` / `Adv…` family),
-and fonts whose glyphs carry Arabic names in the PDF (`qafisolated`), which spell the
-letters exactly. Text in other fonts on the page (Unicode headings, page numbers) is kept
-unless harfix's check rejects that font. A page is decoded only when at least 80% of its
-glyphs can be read, and its text is written out only when harfix's own check passes it
-(`keep` or `repair`); other pages stay empty, so page positions are kept:
+of each page and decodes pre-Unicode fonts with font maps learned from typed editions of
+other books in the same fonts (packaged: the `AXt…` / `Adv…` family), and fonts whose
+glyphs carry Arabic names in the PDF, which spell the letters exactly (`qafisolated`,
+`lamI`, `fnalef`; the names win over a wrong or partial Unicode map). Quran page fonts
+(`QCF_P063`) are read word by word once their table is built
+(`scripts/build_quran_glyphs.py`); it is not shipped until redistribution is cleared. Text
+in other fonts on the page (Unicode headings, page numbers) is kept unless harfix's check
+rejects that font. A page is decoded only when at least 80% of its glyphs can be read, and
+its text is written out only when harfix's own check passes it (`keep` or `repair`);
+other pages stay empty, so page positions are kept:
 
 ```console
 $ harfix decode --pages 8-12 mukhtasar_khuqayr.pdf -o decoded.txt
@@ -233,16 +236,16 @@ extracted by three tools and passed to `harfix check` and `harfix repair`. A bro
 counts as caught when it is routed to `ocr`, or to `repair` and the repaired text then
 labels clean; a clean page is wrongly flagged when routed to `ocr`. All 57 books:
 
-| Extractor | Precision | Recall (0.4.0) | Recall (0.3.0) |
+| Extractor | Precision | Recall (0.5.0) | Recall (0.3.0) |
 |---|---:|---:|---:|
 | pdfminer.six | 99.5% | 96.0% | 96.0% |
 | pdftotext | 99.4% | 93.3% | 93.2% |
-| docling-parse (text cells, as Docling reads them) | 99.5% | 95.2% | 33.5% |
+| docling-parse (text cells, as Docling reads them) | 99.5% | 95.0% | 33.5% |
 
 The docling-parse rules (glyph codes, glyph names, one character per cell) were written
-while looking at these books, dev and test alike, so its 0.4.0 numbers are not held out.
-Of the broken pages it caught, 177 went to `repair` (176 of them for `glyph_names`) and
-their repaired text labels clean against Shamela's transcriptions.
+while looking at these books, dev and test alike, so its numbers are not held out. Of the
+broken pages it caught, 291 went to `repair`, almost all for `glyph_names`, and their
+repaired text labels clean against Shamela's transcriptions.
 
 ### Repair
 
@@ -276,9 +279,9 @@ typed text of the same pages, words as multisets:
 
 The seventh, book 1291, does not decode when left out, and the check rejects 67 of its
 69 pages. The packaged map is trained on all seven. On the benchmark's labelled pages,
-`decode` reads 310 of the 1,160 broken pages (27%: four learned-map books, five books with
-named glyphs), every one of them labels clean after decoding, and it decodes none of the
-419 clean pages.
+`decode` reads 417 of the 1,160 broken pages (36%: four learned-map books, eight books
+with named glyphs), 416 of them label clean after decoding, and it decodes none of the
+420 clean pages. With the Quran table built, it reads 42 more.
 
 ### Synthetic corruptions
 
@@ -319,18 +322,22 @@ On the test split, windows of at least 80 Arabic letters:
 - `check` splits text without form feeds at line ends, so a single very long line is
   judged as one piece.
 - Scanned pages are routed to OCR but their image quality is not assessed.
-- `decode` knows one family of pre-Unicode fonts (`AXt…` / `Adv…`, seven books) and one
-  naming scheme for glyph names. Verse text in `Adv.QAL603` is not decoded, nor are
-  pre-Unicode fonts with Latin glyph names (`HeshamNormal`, `MCSTaybahS_Unormal`).
-  harfix's check passes decoded text whose letters read as Arabic; a page with a fifth
-  of its words wrong can still be trusted.
+- `decode` knows one family of pre-Unicode fonts (`AXt…` / `Adv…`, seven books) and three
+  glyph-naming schemes. Verse text in `Adv.QAL603` is not decoded, nor are pre-Unicode
+  fonts with Latin glyph names (`HeshamNormal`, `MCSTaybahS_Unormal`), nor Quran page
+  fonts until their table is shipped. harfix's check passes decoded text whose letters
+  read as Arabic; a page with a fifth of its words wrong, or a body font with a few
+  swapped letters next to a decoded Quran quotation, can still be trusted.
 - PDF parsing uses pdfminer.six: about 0.1–0.2 s per page on the documents above.
 
 ## Roadmap
 
+- Ship the Quran page-font table once redistribution is cleared
+  (TarteelAI/quranic-universal-library#909).
 - More `decode` font families: verse fonts, pre-Unicode fonts with Latin glyph names
-  (one map per glyph name, learned once for every PDF), other glyph-naming schemes; and a
-  comparison with a modern vision-language OCR model.
+  (one map per glyph name, learned once for every PDF), and fonts whose Unicode map swaps
+  letters (solved per book as a substitution cipher); and a comparison with a modern
+  vision-language OCR model.
 - A follow-up to Docling's broken-text-layer check (docling-project/docling#4654) with
   the glyph code, glyph name and one-character-per-cell rules.
 - Docling, LangChain and LlamaIndex integrations.
@@ -351,6 +358,7 @@ uv run python scripts/benchmark.py run
 uv run --group extractors python scripts/benchmark.py extractors  # pdfminer, pdftotext, docling-parse
 uv run --group extractors python scripts/benchmark.py repair  # search matches before/after repair
 uv run python scripts/benchmark.py decode       # decode the labelled pages
+uv run python scripts/build_quran_glyphs.py     # Quran page-font table (not shipped)
 
 # decode font maps (typed editions are fetched on first use)
 uv run python scripts/fetch_shamela.py --out corpus/shamela_more --per-category 25 \

@@ -42,7 +42,7 @@ from pdfminer.pdfparser import PDFParser
 from pdfminer.pdftypes import PDFStream, resolve1
 
 from .detect import Assessment, assess_text
-from .glyphnames import fix_allah, parse_token
+from .glyphnames import fix_allah, glyph_letters
 from .model import CharLM, default_models
 from .normalize import decompose_presentation_forms
 from .repair import _LTR_RUN
@@ -51,16 +51,20 @@ SPACE = " "
 GAP_WIDE = "gap:wide"
 GAP_NARROW = "gap:narrow"
 NAMED = "name:"
+QURAN = "quran:"
+_EXACT = (NAMED, QURAN)
 # Family of a kept font's glyphs once harfix has rejected that font's text.
 UNREADABLE = "unreadable"
 _SUBSET = re.compile(r"^[A-Z]{6}\+")
 _CID = re.compile(r"\(cid:(\d+)\)")
+_ARABIC_LETTER = re.compile(r"[\u0621-\u064A]")
 _LONE_ARTICLE = re.compile(r"(?<!\S)ال +(?=\S)")
 # Decode a page only when this share of its glyphs can be read (decoded or kept as they
-# are) and this share needs decoding. Whether the result is trusted is then up to
-# harfix's check of the decoded text.
+# are), and this share needs decoding through the map, or this many glyphs are read
+# exactly. Whether the result is trusted is then up to harfix's check of the decoded text.
 MIN_KNOWN = 0.8
 MIN_DECODED = 0.3
+MIN_EXACT = 5
 _PLAIN_GAPS = {
     SPACE: [(SPACE, 0.0)],
     GAP_WIDE: [(SPACE, 0.0)],
@@ -132,7 +136,52 @@ def _symbol(char: LTChar, glyph_names: dict[str, dict[int, str]]) -> str:
     text = char.get_text()
     if len(text) == 1 and _MARKER <= ord(text) < _MARKER + 256:
         return NAMED + glyph_names[char.fontname][ord(text) - _MARKER]
-    return _SUBSET.sub("", char.fontname) + ":" + text
+    family = _SUBSET.sub("", char.fontname)
+    if m := _QURAN_FONT.fullmatch(family):
+        return f"{QURAN}{'v2' if m.group(1) else 'v1'}:{int(m.group(2))}:{text}"
+    return family + ":" + text
+
+
+# King Fahd Complex page fonts of the Madinah Mushaf: `QCF_P063` (1405H print, v1) and
+# `QCF2063` (1421H print, v2) each draw one glyph per word of that Mushaf page.
+_QURAN_FONT = re.compile(r"QCF(2)?_?P?(\d{3})")
+
+
+@lru_cache(maxsize=1)
+def _quran_glyphs() -> dict[tuple[str, int], dict[str, str]]:
+    """(print, page) to glyph to word; the second glyph of a word with a pause mark gives
+    nothing."""
+    path = resources.files("harfix") / "data" / "quran_glyphs.json.gz"
+    if not path.is_file():
+        return {}
+    with resources.as_file(path) as file, gzip.open(file, "rt", encoding="utf-8") as fh:
+        data = json.load(fh)
+    table: dict[tuple[str, int], dict[str, str]] = {}
+    for version in ("v1", "v2"):
+        starts = [*data[version]["first_word"], len(data["text"])]
+        codes = data[version]["codes"].split(" ")
+        for page in range(1, len(starts)):
+            glyphs = table.setdefault((version, page), {})
+            for i in range(starts[page - 1], starts[page]):
+                glyphs[codes[i][0]] = data["text"][i]
+                glyphs.update(dict.fromkeys(codes[i][1:], ""))
+    return table
+
+
+def quran_table_available() -> bool:
+    """Whether the Quran page-font table was built (`scripts/build_quran_glyphs.py`). It is
+    not shipped yet: redistribution of the glyph-code data has not been cleared."""
+    return bool(_quran_glyphs())
+
+
+def quran_word(symbol: str) -> str | None:
+    """The word a Quran page-font glyph draws, from `scripts/build_quran_glyphs.py`'s table.
+    PDFs write the glyphs on their Presentation Forms-A code points, or on byte codes
+    from 0x21 that count from the first of them (U+FB51 in v1, U+FC41 in v2)."""
+    version, page, char = symbol[len(QURAN) :].split(":", 2)
+    if len(char) == 1 and 0x21 <= ord(char) < 0x100:
+        char = chr(ord(char) - 0x21 + (0xFB51 if version == "v1" else 0xFC41))
+    return _quran_glyphs().get((version, int(page)), {}).get(char)
 
 
 def _fonts(resources, seen: set[int]) -> Iterator[dict]:
@@ -147,16 +196,17 @@ def _fonts(resources, seen: set[int]) -> Iterator[dict]:
 
 
 def font_glyph_names(path: str | Path) -> dict[str, dict[int, str]]:
-    """Per font name, code to glyph name for fonts without a Unicode map whose encoding
-    names Arabic glyphs (`qafisolated`, `lamwithalef`). pdfminer cannot map these names,
-    so it extracts such glyphs as `(cid:N)` or as the base encoding's Latin character;
-    the names spell the letters."""
+    """Per font name, code to glyph name for fonts whose encoding names Arabic glyphs
+    (`qafisolated`, `lamwithalef`, `lamI`, `fnalef`). pdfminer cannot map these names, so
+    without a Unicode map it extracts such glyphs as `(cid:N)` or as the base encoding's
+    Latin character. Fonts that also carry a Unicode map are included: their maps are
+    often partial or wrong where the names are right, and the names win."""
     out: dict[str, dict[int, str]] = {}
     with open(path, "rb") as fh:
         seen: set[int] = set()
         for page in PDFPage.create_pages(PDFDocument(PDFParser(fh))):
             for spec in _fonts(page.resources, seen):
-                if not isinstance(spec, dict) or "ToUnicode" in spec:
+                if not isinstance(spec, dict):
                     continue
                 font = getattr(resolve1(spec.get("BaseFont")), "name", None)
                 encoding = resolve1(spec.get("Encoding"))
@@ -167,10 +217,12 @@ def font_glyph_names(path: str | Path) -> dict[str, dict[int, str]]:
                     if isinstance(item, int):
                         code = item
                     elif hasattr(item, "name"):
-                        if parse_token(item.name.lower()) is not None:
-                            names[code] = item.name.lower()
+                        if glyph_letters(item.name) is not None:
+                            names[code] = item.name
                         code += 1
-                out[font] = names if len(names) >= 5 else {}
+                # Signs and marks alone (`openparen`) do not make an Arabic font.
+                letters = sum(1 for n in names.values() if _ARABIC_LETTER.search(glyph_letters(n)))
+                out[font] = names if letters >= 5 else {}
     return {font: names for font, names in out.items() if names}
 
 
@@ -235,8 +287,12 @@ class FontMap:
         if symbol in self.outputs:
             return self.outputs[symbol]
         if symbol.startswith(NAMED):
-            glyphs = parse_token(symbol[len(NAMED) :].lower())
-            return [("".join(glyphs), 0.0)] if glyphs is not None else None
+            letters = glyph_letters(symbol[len(NAMED) :])
+            return [(letters, 0.0)] if letters is not None else None
+        if symbol.startswith(QURAN):
+            word = quran_word(symbol)
+            # One glyph is one word: a space after it whatever the gaps say.
+            return [(word + SPACE if word else "", 0.0)] if word is not None else None
         family, _, char = symbol.partition(":")
         if is_gap(symbol) or family in self.families or family == UNREADABLE:
             return None
@@ -253,21 +309,29 @@ class FontMap:
                 if is_gap(s):
                     for chars in current.values():
                         chars.append(" ")
-                elif s not in self.outputs and not s.startswith(NAMED) and self.options(s):
+                elif s not in self.outputs and not s.startswith(_EXACT) and self.options(s):
                     family, _, char = s.partition(":")
                     current[family].append(char)
             for family, chars in current.items():
                 texts[family].append("".join(chars))
         return {family: "\n".join(rows) for family, rows in texts.items()}
 
-    def coverage(self, lines: list[list[str]]) -> tuple[float, float]:
-        """(share of glyphs that can be read, share that is decoded rather than kept)."""
+    def coverage(self, lines: list[list[str]]) -> tuple[float, float, int]:
+        """(share of glyphs that can be read, share that is decoded rather than kept,
+        how many are read exactly: named glyphs and Quran page-font glyphs)."""
         glyphs = [s for line in lines for s in line if not is_gap(s)]
         if not glyphs:
-            return 0.0, 0.0
-        known = sum(self.options(s) is not None for s in glyphs)
-        decoded = sum(s in self.outputs or s.startswith(NAMED) for s in glyphs)
-        return known / len(glyphs), decoded / len(glyphs)
+            return 0.0, 0.0, 0
+        known = [s for s in glyphs if self.options(s) is not None]
+        exact = sum(1 for s in known if s.startswith(_EXACT))
+        decoded = sum(1 for s in glyphs if s in self.outputs) + exact
+        return len(known) / len(glyphs), decoded / len(glyphs), exact
+
+    def wants_decoding(self, lines: list[list[str]]) -> bool:
+        """Whether a page has glyphs to decode: a share learned through the map, or a few
+        read exactly (a Quran quotation on an otherwise readable page)."""
+        _, decoded, exact = self.coverage(lines)
+        return decoded >= MIN_DECODED or exact >= MIN_EXACT
 
     def save(self, path: Path) -> None:
         payload = {
@@ -390,8 +454,8 @@ def decode_pdf(
 
     out = []
     for number, lines in zip(numbers, screen_kept_fonts(pages_lines, font_map), strict=True):
-        known, decoded = font_map.coverage(lines)
-        if known < MIN_KNOWN or decoded < MIN_DECODED:
+        known, decoded, _ = font_map.coverage(lines)
+        if known < MIN_KNOWN or not font_map.wants_decoding(lines):
             out.append(DecodedPage(number, "", known, decoded, None))
             continue
         text = "\n".join(decode_line(line, font_map, lm) for line in lines)
@@ -404,10 +468,7 @@ def screen_kept_fonts(pages: list[list[list[str]]], font_map: FontMap) -> list[l
     legacy font, a wrong Unicode map) marked as unreadable. A font's runs too short to
     judge on their page are judged pooled across the pages, as in `scan`. Only pages with
     glyphs to decode are checked: the others are not decoded whatever their fonts."""
-    kept = [
-        font_map.kept_texts(lines) if font_map.coverage(lines)[1] >= MIN_DECODED else {}
-        for lines in pages
-    ]
+    kept = [font_map.kept_texts(lines) if font_map.wants_decoding(lines) else {} for lines in pages]
     short: dict[str, list[str]] = defaultdict(list)
     rejected_on: list[set[str]] = [set() for _ in pages]
     for rejected, texts in zip(rejected_on, kept, strict=True):

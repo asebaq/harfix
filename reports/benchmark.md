@@ -1,6 +1,6 @@
 # harfix benchmark: Shamela books
 
-Generated 2026-10-20 by `scripts/benchmark.py`.
+Generated 2026-10-21 by `scripts/benchmark.py`.
 
 Labels come from typed text, not from harfix: a font run is `clean` when at least
 75% of its words occur in Shamela's transcriptions of the books (or in
@@ -18,8 +18,8 @@ Books: 57 with a PDF text layer and a typed text. Up to 40 pages per book, evenl
 
 | Unit | clean | broken | partial | unverified | unlabelled |
 |---|---:|---:|---:|---:|---:|
-| pages | 419 | 1160 | 486 | 77 | 138 |
-| font runs | 815 | 1719 | 857 | - | - |
+| pages | 420 | 1157 | 488 | 77 | 138 |
+| font runs | 816 | 1716 | 859 | - | - |
 
 ## harfix against the labels (clean and broken only)
 
@@ -28,12 +28,12 @@ Books are split by a hash of the PDF into `dev` (used when changing harfix rules
 
 | Split | Unit | Flagged broken | Flagged clean | Missed broken | Kept clean | Precision | Recall |
 |---|---|---:|---:|---:|---:|---:|---:|
-| dev | pages | 670 | 2 | 2 | 226 | 99.7% | 99.7% |
-| dev | font runs | 957 | 18 | 15 | 362 | 98.2% | 98.5% |
-| test | pages | 487 | 6 | 1 | 185 | 98.8% | 99.8% |
-| test | font runs | 732 | 10 | 15 | 425 | 98.7% | 98.0% |
-| all | pages | 1157 | 8 | 3 | 411 | 99.3% | 99.7% |
-| all | font runs | 1689 | 28 | 30 | 787 | 98.4% | 98.3% |
+| dev | pages | 668 | 2 | 2 | 226 | 99.7% | 99.7% |
+| dev | font runs | 955 | 18 | 15 | 362 | 98.2% | 98.5% |
+| test | pages | 486 | 6 | 1 | 186 | 98.8% | 99.8% |
+| test | font runs | 731 | 10 | 15 | 426 | 98.7% | 98.0% |
+| all | pages | 1154 | 8 | 3 | 412 | 99.3% | 99.7% |
+| all | font runs | 1686 | 28 | 30 | 788 | 98.4% | 98.3% |
 
 ## Flagged font runs by reason
 
@@ -42,7 +42,7 @@ Books are split by a hash of the PDF into `dev` (used when changing harfix rules
 | `legacy_encoding` | 0 | 747 | 0 |
 | `presentation_forms` | 105 | 108 | 95 |
 | `quran_glyph_codes` | 6 | 35 | 27 |
-| `same_script_substitution` | 20 | 275 | 494 |
+| `same_script_substitution` | 20 | 272 | 497 |
 | `unmapped_elongation` | 11 | 3 | 16 |
 | `unmapped_glyphs` | 2 | 1060 | 18 |
 
@@ -50,7 +50,7 @@ Books are split by a hash of the PDF into `dev` (used when changing harfix rules
 
 | Shamela id | Split | Pages | Labels (clean/broken/partial/unverified/unlabelled) | Flagged | Precision | Recall |
 |---:|---|---:|---|---:|---:|---:|
-| 1106 | test | 40 | 0/9/31/0/0 | 28 | 100.0% | 100.0% |
+| 1106 | test | 40 | 0/8/32/0/0 | 28 | 100.0% | 100.0% |
 | 319+325+488+493+495+500+501+502+503+505+507+508+509+511 | test | 40 | 33/0/4/0/3 | 4 | n/a | n/a |
 | 510+513+516+517+518+519+520+521 | dev | 40 | 36/0/3/0/1 | 0 | n/a | n/a |
 | 370 | dev | 40 | 0/37/2/0/1 | 40 | 100.0% | 100.0% |
@@ -87,10 +87,10 @@ Books are split by a hash of the PDF into `dev` (used when changing harfix rules
 | 1124 | dev | 40 | 0/3/34/0/3 | 32 | 100.0% | 100.0% |
 | 30628 | dev | 40 | 0/39/0/0/1 | 40 | 100.0% | 100.0% |
 | 1576 | test | 40 | 0/36/0/0/4 | 38 | 100.0% | 100.0% |
-| 1230 | test | 40 | 1/0/35/0/4 | 7 | n/a | n/a |
+| 1230 | test | 40 | 2/0/34/0/4 | 7 | n/a | n/a |
 | 1112 | test | 40 | 19/1/3/13/4 | 18 | 25.0% | 100.0% |
 | 356 | test | 40 | 0/38/0/0/2 | 38 | 100.0% | 100.0% |
-| 23 | dev | 40 | 0/9/29/1/1 | 40 | 100.0% | 100.0% |
+| 23 | dev | 40 | 0/7/31/1/1 | 40 | 100.0% | 100.0% |
 | 354 | dev | 40 | 0/39/0/0/1 | 39 | 100.0% | 100.0% |
 | 108 | test | 40 | 4/4/16/15/1 | 36 | 66.7% | 100.0% |
 | 10 | test | 40 | 0/35/0/0/5 | 40 | 100.0% | 100.0% |

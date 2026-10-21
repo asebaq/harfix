@@ -152,17 +152,107 @@ def parse_token(token: str) -> tuple[str, ...] | None:
 def _spelled(word: str) -> tuple[str, ...] | None:
     """The glyphs of a word that is written in glyph names. A single short name could be
     an English word (`seen`, `sad`); a form suffix or a second glyph makes it a name."""
-    if not word or not ("a" <= word[0] <= "z"):
+    if not word or not word.lstrip(_EDGE_SIGNS)[:1].islower():
         return None
     glyphs = parse_token(word)
     if glyphs and (len(glyphs) > 1 or len(word) > 8):
         return glyphs
+    # Names whose form is a capital (`tamarFalifF`, `kashidashort` between them) are glued
+    # without a separator; the capital makes even one name unambiguous (`fayaU`). Marks
+    # alone (`fathaA`) spell nothing; punctuation glued to either end stays.
+    word = word.replace("\ufffd", "")
+    core = word.strip(_EDGE_SIGNS)
+    names = _GLUED_FORM_LAST.findall(core)
+    if names and "".join(names) == core:
+        spelled = tuple(glyph_letters(n) for n in names)
+        if None not in spelled:
+            start = word.index(core)
+            return (*word[:start], *spelled, *word[start + len(core) :])
     return None
+
+
+_EDGE_SIGNS = ",.;:()[]«»!؟،"
 
 
 def glyph_name_words(text: str) -> int:
     """Words spelled in Arabic glyph names."""
     return sum(1 for word in text.split() if _spelled(word) is not None)
+
+
+# Two more naming schemes, seen in fonts without a Unicode map:
+# - letter, then the form in capitals (Linotype Lotus and fonts derived from it):
+#   `lamI` initial, `lamM` medial, `lamF` final, `lamU` unconnected, `oneA` digits;
+# - the form first (`fnalef`, `inbaa`, `midmeem`).
+_FORM_LAST = {
+    "alif": "ا", "alifhamA": "أ", "alifhamB": "إ", "alifmadda": "آ", "alifmaq": "ى",
+    "alifmaqham": "ئ", "alimaq": "ى", "ayn": "ع", "ba": "ب", "dad": "ض", "dal": "د", "dhal": "ذ",
+    "fa": "ف", "ghayn": "غ", "ha": "ح", "he": "ه", "hamza": "ء", "jim": "ج", "kaf": "ك",
+    "kha": "خ", "lam": "ل", "lamali": "لا", "lamalihamA": "لأ", "lamalihamB": "لإ",
+    "lamalimad": "لآ", "mim": "م", "nun": "ن", "pa": "ط", "qaf": "ق", "ra": "ر",
+    "sad": "ص", "shin": "ش", "sin": "س", "ta": "ت", "tamar": "ة", "tha": "ث",
+    "waw": "و", "wawham": "ؤ", "ya": "ي", "za": "ظ", "zay": "ز",
+    "fatha": "", "damma": "", "kasra": "", "sukun": "", "shadda": "", "madda": "",
+    "fathatan": "", "dammatan": "", "kasratan": "", "tatweel": "", "kashida": "",
+    "shaddadam": "", "shaddadamtan": "", "shaddafat": "", "shaddafattan": "",
+    "shaddakas": "", "shaddakastan": "",
+    **{d: chr(0x0660 + i) for i, d in enumerate(
+        "zero one two three four five six seven eight nine".split()
+    )},
+}  # fmt: skip
+_FORM_LAST_SUFFIX = re.compile(r"(.+?)-?(FF|UF|[FIMUAB])")
+# Non-standard names of signs in the same fonts; standard names (`comma`) are already
+# mapped by PDF readers.
+_CUSTOM_SIGNS = {
+    "kashidashort": "", "kashidalong": "", "longallah": "الله", "allah": "الله",
+    "openparen": "(", "closeparen": ")", "openbracket": "[", "closebracket": "]",
+    "openchevron": "«", "closechevron": "»", "openparendec": "﴾", "closeparendec": "﴿",
+    "fullpoint": ".", "question": "؟",
+}  # fmt: skip
+_GLUED_FORM_LAST = re.compile(
+    "|".join(sorted(_CUSTOM_SIGNS, key=len, reverse=True))
+    + r"|[a-z][a-z-]*?(?:ham[AB])?(?:FF|UF|[FIMUAB])"
+)
+
+_FORM_FIRST = {
+    "ain": "ع", "alef": "ا", "alefmaqsurah": "ى", "baa": "ب", "caf": "ك", "dad": "ض",
+    "dal": "د", "dhah": "ظ", "fa": "ف", "ghain": "غ", "ha": "ه", "haa": "ح",
+    "hamzahonalef": "أ", "hamzahonwaw": "ؤ", "hamzahonya": "ئ", "jeem": "ج", "khaa": "خ",
+    "lam": "ل", "lamalef": "لا", "meem": "م", "noon": "ن", "qaf": "ق", "ra": "ر",
+    "sad": "ص", "seen": "س", "sheen": "ش", "taa": "ت", "taamarbutah": "ة", "tah": "ط",
+    "thaa": "ث", "thal": "ذ", "waw": "و", "ya": "ي", "zain": "ز",
+}  # fmt: skip
+_FORM_FIRST_PREFIX = re.compile(r"(fn|in|mid|is)(.+)")
+
+
+def _spell_bases(base: str, table: dict[str, str]) -> str | None:
+    """Letters of a glyph whose base is one or more names of `table` (`baraF` is ba+ra)."""
+    best: list[str | None] = [None] * (len(base) + 1)
+    best[0] = ""
+    for i in range(len(base)):
+        if best[i] is None:
+            continue
+        for name, letters in table.items():
+            if base.startswith(name, i) and best[i + len(name)] is None:
+                best[i + len(name)] = best[i] + letters
+    return best[-1]
+
+
+@lru_cache(maxsize=4096)
+def glyph_letters(name: str) -> str | None:
+    """The letters one glyph name spells, in any naming scheme harfix knows, or None when
+    the name is not an Arabic glyph name. Marks spell nothing (an empty string)."""
+    if name in _CUSTOM_SIGNS:
+        return _CUSTOM_SIGNS[name]
+    if m := _FORM_LAST_SUFFIX.fullmatch(name):
+        letters = _spell_bases(m.group(1), _FORM_LAST)
+        if letters is not None:
+            return letters
+    if m := _FORM_FIRST_PREFIX.fullmatch(name):
+        letters = _spell_bases(m.group(2), _FORM_FIRST)
+        if letters is not None:
+            return letters
+    glyphs = parse_token(name.lower())
+    return "".join(glyphs) if glyphs is not None else None
 
 
 _NUMBER_WORD = re.compile(r"\d{1,5}")

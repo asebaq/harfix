@@ -1,9 +1,17 @@
+import pytest
 from conftest import ASCII_LEGACY, CLEAN_LINES, NAMES
 from pdf_fixture import LETTERS, build_pdf
 
 from harfix import scan_pdf
 from harfix.cli import main
-from harfix.decode import GAP_NARROW, GAP_WIDE, SPACE, FontMap, decode_pdf
+from harfix.decode import (
+    GAP_NARROW,
+    GAP_WIDE,
+    SPACE,
+    FontMap,
+    decode_pdf,
+    quran_table_available,
+)
 
 # A pre-Unicode font: every Arabic letter is drawn from an ASCII code.
 LEGACY_MAP = FontMap(
@@ -99,3 +107,43 @@ def test_scan_points_to_decode_for_fonts_it_can_read(tmp_path):
     # A legacy font no map knows is sent to OCR without a pointer to `decode`.
     page = scan_pdf(legacy_pdf(tmp_path)).pages[0]
     assert page.route == "ocr" and not page.decodable
+
+
+# Glyph names of Linotype Lotus and fonts derived from it: the form follows in capitals.
+LOTUS = {
+    "ء": "hamza", "آ": "alifmadda", "أ": "alifhamA", "ؤ": "wawham", "إ": "alifhamB",
+    "ئ": "alifmaqham", "ا": "alif", "ب": "ba", "ة": "tamar", "ت": "ta", "ث": "tha",
+    "ج": "jim", "ح": "ha", "خ": "kha", "د": "dal", "ذ": "dhal", "ر": "ra", "ز": "zay",
+    "س": "sin", "ش": "shin", "ص": "sad", "ض": "dad", "ط": "pa", "ظ": "za", "ع": "ayn",
+    "غ": "ghayn", "ف": "fa", "ق": "qaf", "ك": "kaf", "ل": "lam", "م": "mim", "ن": "nun",
+    "ه": "he", "و": "waw", "ى": "alifmaq", "ي": "ya",
+}  # fmt: skip
+
+
+def test_glyph_names_win_over_a_wrong_unicode_map(tmp_path):
+    # The font's ToUnicode map gives the wrong letters, its glyph names the right ones.
+    wrong = dict(zip(LETTERS, LETTERS[3:] + LETTERS[:3], strict=True))
+    names = {letter: LOTUS[letter] + "M" for letter in LETTERS if letter in LOTUS}
+    path = tmp_path / "lotus.pdf"
+    pages = [[("Lotus", line[::-1]) for line in CLEAN_LINES]]
+    path.write_bytes(build_pdf(pages, {"Lotus": wrong}, {"Lotus": names}))
+    page = decode_pdf(path)[0]
+    assert page.text.split("\n") == CLEAN_LINES
+    assert page.trusted
+
+
+@pytest.mark.skipif(
+    not quran_table_available(), reason="needs scripts/build_quran_glyphs.py's table"
+)
+def test_a_quran_quotation_in_a_page_font_is_read_word_by_word(tmp_path):
+    # The King Fahd Complex font for Mushaf page 4 draws one glyph per word, numbered
+    # from U+FB51 in reading order: Al-Baqarah 2:17 begins that page.
+    glyphs = [chr(0xFB51 + i) for i in range(7)]
+    carriers = LETTERS[: len(glyphs)]
+    identity = {letter: letter for letter in LETTERS}
+    lines = [("Naskh", CLEAN_LINES[0][::-1]), ("QCF_P004", "".join(reversed(carriers)))]
+    path = tmp_path / "quran.pdf"
+    font = dict(zip(carriers, glyphs, strict=True))
+    path.write_bytes(build_pdf([lines], {"Naskh": identity, "QCF_P004": font}))
+    page = decode_pdf(path)[0]
+    assert page.text.split("\n") == [CLEAN_LINES[0], "مثلهم كمثل الذي استوقد نارا فلما أضاءت"]

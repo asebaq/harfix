@@ -12,7 +12,13 @@ from pdfminer.layout import LTAnno, LTChar, LTContainer, LTImage, LTPage, LTText
 from pdfminer.pdfparser import PDFSyntaxError
 from pdfminer.psparser import PSException
 
-from .decode import _SUBSET, default_font_map, font_glyph_names
+from .decode import (
+    _QURAN_FONT,
+    _SUBSET,
+    default_font_map,
+    font_glyph_names,
+    quran_table_available,
+)
 from .detect import ROUTES, Assessment, Thresholds, assess_text, default_thresholds, worst
 from .model import ModelPair, default_models
 
@@ -131,14 +137,17 @@ def scan_pdf(
                 short[font].append(page.runs[font])
     pooled = {font: assess("\n".join(texts)) for font, texts in short.items() if len(texts) > 1}
 
-    # Fonts `harfix decode` can read: in its font map, or with Arabic glyph names.
+    # Fonts `harfix decode` can read: in its font map, with Arabic glyph names, or Quran
+    # page fonts.
     families = default_font_map().families
     named = font_glyph_names(path)
     decodable = {
         font
         for page in scanned
         for font in page.runs
-        if font in named or _SUBSET.sub("", font) in families
+        if font in named
+        or _SUBSET.sub("", font) in families
+        or (_QURAN_FONT.fullmatch(_SUBSET.sub("", font)) and quran_table_available())
     }
     return DocumentReport(str(path), [_report(page, pooled, assess, decodable) for page in scanned])
 

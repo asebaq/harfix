@@ -8,7 +8,7 @@ import json
 import sys
 from pathlib import Path
 
-from .decode import MIN_DECODED, decode_pdf
+from .decode import MIN_KNOWN, decode_pdf
 from .detect import ROUTES, assess_document
 from .pdf import HarfixError, scan_pdf
 from .repair import repair_text
@@ -152,9 +152,9 @@ def _decode(args: argparse.Namespace) -> int:
     for p in pages:
         if p.assessment is None:
             why = (
-                "no glyphs in fonts harfix can decode"
-                if p.decoded_share < MIN_DECODED
-                else f"only {p.known_share:.0%} of its glyphs can be read"
+                f"only {p.known_share:.0%} of its glyphs can be read"
+                if p.decoded_share and p.known_share < MIN_KNOWN
+                else "no glyphs in fonts harfix can decode"
             )
             print(f"not decoded p{p.page}: {why}", file=sys.stderr)
         elif p.trusted:

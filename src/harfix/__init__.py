@@ -35,4 +35,4 @@ __all__ = [
     "repair_text",
     "scan_pdf",
 ]
-__version__ = "0.4.0"
+__version__ = "0.5.0"
