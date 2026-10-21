@@ -184,12 +184,16 @@ the third is an extraction fault that another extractor may not have.
 
 Fonts not decoded yet:
 
-- **Verse and ornament font `Adv.QAL603`.** EM learns "produces nothing" for all its
-  glyphs, so verse text set in it is missing from the output. Its few, very frequent
-  glyphs look like brackets, honorifics and whole-word ligatures.
+- **Quran quotations in the `AXt` / `Adv` books.** They are set in many small font
+  subsets (`Advzy0`, `Advzy312056`, …: several per book, a few glyphs each, the same low
+  codes reused between subsets, a few subset names shared between books). Only 16-17% of
+  the quoted words come out on books 1575 and 1576, against 76-85% of the other words.
+  `Adv.QAL603` and `Font575` / `Font445`, which EM learns as producing nothing, are
+  ornaments and running heads (book title, chapter, page number) that the typed editions
+  leave out; they are dropped.
 - **`HeshamNormal`, `MCSTaybahS_Unormal`.** Their glyphs carry Latin names (`eacute`,
-  `Idieresis`): pre-Unicode fonts like `AXt`, but with stable names, so a map keyed by
-  glyph name could be learned once for every PDF that embeds them.
+  `Idieresis`): pre-Unicode fonts like `AXt`. If the names are the same in every PDF that
+  embeds them, a map keyed by glyph name could be learned once for all of them.
 - **Fonts with neither names nor a Unicode map** (`AL-Mohanad`, `AGAArabesque`, fonts
   pdfminer cannot name): only their codes are left.
 

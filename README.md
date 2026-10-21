@@ -323,8 +323,10 @@ On the test split, windows of at least 80 Arabic letters:
   judged as one piece.
 - Scanned pages are routed to OCR but their image quality is not assessed.
 - `decode` knows one family of pre-Unicode fonts (`AXt…` / `Adv…`, seven books) and three
-  glyph-naming schemes. Verse text in `Adv.QAL603` is not decoded, nor are pre-Unicode
-  fonts with Latin glyph names (`HeshamNormal`, `MCSTaybahS_Unormal`), nor Quran page
+  glyph-naming schemes. Quran quotations in those books are set in many small `Advzy…`
+  font subsets and come out only in part (16-17% of their words on books 1575 and 1576);
+  running heads in `Font575` / `Adv.QAL603` are dropped. Pre-Unicode fonts with Latin
+  glyph names (`HeshamNormal`, `MCSTaybahS_Unormal`) are not decoded, nor Quran page
   fonts until their table is shipped. harfix's check passes decoded text whose letters
   read as Arabic; a page with a fifth of its words wrong, or a body font with a few
   swapped letters next to a decoded Quran quotation, can still be trusted.
