@@ -135,6 +135,31 @@ partly wrong Unicode map (`الؿال` for `المال`) that harfix's check pas
 quotations makes a page trusted whose body is not right; the other 4 (books 255, 806 and
 815) were not inspected.
 
+## Quran quotations in the learned-map books
+
+The `AXt` / `Adv` books set each Quran quotation between two `Advzy0` brackets, in small
+font subsets of their own (`Advzy251337`, `Advzy364547`, …) that draw one glyph per word;
+the subsets reuse the same low codes, and only a few subset names recur between books. A
+font map learns at most two letters per glyph, so EM cannot read them. `train_font_maps.py`
+now learns them from the typed quotations (`﴿…﴾`) instead: on a page with as many bracketed
+glyph runs as typed quotations, a run with as many glyphs as its quotation has words gives
+glyph *i* word *i*, and a glyph keeps the word most of its occurrences vote for. On books
+1575 and 1576 the runs and quotations match one to one (187 and 256 of each). EM's own
+guesses for fonts used (≥90%) only between brackets are dropped; the packaged map has 1500
+verse glyphs (13 KB → 20 KB).
+
+Quoted words of three letters or more found in the decoded page, every fourth page:
+
+| Book | Quoted words | Before | Book held out of training | Packaged map (book in training) | Other words, before → after |
+|---|---:|---:|---:|---:|---:|
+| 1575 | 401 | 17% | 28% | 74% | 85% → 85% |
+| 1576 | 546 | 16% | 20% | 64% | 76% → 76% |
+
+Most of the gain needs the book in training: few subsets recur between books, so on
+another book only the shared ones are read. The count is loose (a quoted word counts if
+it occurs anywhere on the decoded page). The coverage table below is unchanged: with the
+local Quran table, its output is identical with the old and the new map.
+
 ## Coverage of the benchmark
 
 Command: `scripts/benchmark.py decode`. All labelled pages of the benchmark
@@ -184,13 +209,11 @@ the third is an extraction fault that another extractor may not have.
 
 Fonts not decoded yet:
 
-- **Quran quotations in the `AXt` / `Adv` books.** They are set in many small font
-  subsets (`Advzy0`, `Advzy312056`, …: several per book, a few glyphs each, the same low
-  codes reused between subsets, a few subset names shared between books). Only 16-17% of
-  the quoted words come out on books 1575 and 1576, against 76-85% of the other words.
-  `Adv.QAL603` and `Font575` / `Font445`, which EM learns as producing nothing, are
-  ornaments and running heads (book title, chapter, page number) that the typed editions
-  leave out; they are dropped.
+- **Quran quotations in `AXt` / `Adv` books outside training.** Their verse subsets are
+  mostly not shared between books (see above): 20-28% of the quoted words come out on a
+  held-out book. `Adv.QAL603` and `Font575` / `Font445`, which EM learns as producing
+  nothing, are ornaments and running heads (book title, chapter, page number) that the
+  typed editions leave out; they are dropped.
 - **`HeshamNormal`, `MCSTaybahS_Unormal`.** Their glyphs carry Latin names (`eacute`,
   `Idieresis`): pre-Unicode fonts like `AXt`. If the names are the same in every PDF that
   embeds them, a map keyed by glyph name could be learned once for all of them.

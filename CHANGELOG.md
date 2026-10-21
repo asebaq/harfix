@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- The packaged font map reads Quran quotations in the `AXt` / `Adv` books: their
+  one-glyph-per-word `Advzy…` subsets are learned word by word from the typed quotations
+  (1500 glyphs). On books 1575 and 1576, 64-74% of the quoted words come out (16-17%
+  before); on a book held out of training, 20-28%. `scripts/train_font_maps.py` learns them.
+
 ## 0.5.0
 
 - `decode` reads two more glyph-naming schemes: Linotype Lotus style (`lamI`,

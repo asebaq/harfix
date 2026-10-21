@@ -88,6 +88,65 @@ def typed_pages(book: str) -> dict[int, str]:
     return {p: letters_only("\n".join(t).replace("\r", "\n")) for p, t in pages.items()}
 
 
+# Quran quotations in these books are set in their own small fonts (`Advzy251337`), one
+# glyph per word between `Advzy0` brackets; the glyph codes carry no letters, so each
+# glyph's word is learned from the typed quotation (﴿…﴾) it stands for.
+VERSE_OPEN, VERSE_CLOSE = "Advzy0:m", "Advzy0:n"
+
+
+def typed_verses(book: str) -> dict[int, list[list[str]]]:
+    """Per printed page, the typed Quran quotations as lists of words (letters only)."""
+    pages: dict[int, list[str]] = defaultdict(list)
+    for line in (CORPUS / "text" / f"{book}.jsonl").open(encoding="utf-8"):
+        record = json.loads(line)
+        if record.get("printed") is not None:
+            pages[int(record["printed"])].append(record["text"])
+    return {
+        p: [letters_only(v).split() for v in re.findall(r"﴿([^﴾]*)﴾", "\n".join(t))]
+        for p, t in pages.items()
+    }
+
+
+def verse_spans(lines: list[list[str]]) -> list[list[str]]:
+    """The glyphs between each pair of verse brackets on a page, in reading order."""
+    spans, current = [], None
+    for s in (s for line in lines for s in line if not is_gap(s)):
+        if s == VERSE_OPEN:
+            current = []
+        elif s == VERSE_CLOSE:
+            if current:
+                spans.append(current)
+            current = None
+        elif current is not None:
+            current.append(s)
+    return spans
+
+
+def learn_verse_words(books, offsets, train) -> dict[str, str]:
+    """Each verse glyph's word: where a page has as many bracketed glyph runs as typed
+    quotations, and a run as many glyphs as its quotation has words, glyph i is word i.
+    A glyph keeps the word most of its occurrences vote for."""
+    votes: dict[str, Counter] = defaultdict(Counter)
+    for b in train:
+        lines, _, _ = books[b]
+        verses = typed_verses(b)
+        for index, page in lines.items():
+            spans = verse_spans(page)
+            typed = verses.get(index - offsets[b], []) if offsets[b] is not None else []
+            if not spans or len(spans) != len(typed):
+                continue
+            for span, words in zip(spans, typed, strict=True):
+                if len(span) == len(words):
+                    for s, w in zip(span, words, strict=True):
+                        votes[s][w] += 1
+    learned = {}
+    for s, counts in votes.items():
+        word, n = counts.most_common(1)[0]
+        if n > sum(counts.values()) / 2:
+            learned[s] = word
+    return learned
+
+
 def page_offset(pdf_lines: dict[int, list[list[str]]]) -> int | None:
     """Most common difference between PDF page index and printed page number."""
     diffs = Counter(
@@ -390,6 +449,7 @@ def main() -> None:
     # with its neighbour's typed text teaches wrong letters. Re-pair each training book
     # with the shift (within 3 pages) whose typed text the first map reads best, and refit.
     moved = False
+    offsets = {b: books[b][2] for b in args.train}
     for b in args.train:
         lines, typed, printed = books[b]
         if printed is None:
@@ -397,9 +457,25 @@ def main() -> None:
         best = best_offset(font_map, lines, typed, range(printed - 3, printed + 4))
         if best != printed:
             print(f"book {b}: page numbers read off by {best - printed} page(s); re-paired")
-            pairs[b], moved = paired(lines, typed, best), True
+            pairs[b], moved, offsets[b] = paired(lines, typed, best), True, best
     if moved:
         font_map = fit(books, pairs, held_out, args.train, args.iterations, metadata)
+    verse_words = learn_verse_words(books, offsets, args.train)
+    # A verse glyph draws a whole word, which EM (at most two letters per glyph) cannot
+    # learn: keep only the words learned from the typed quotations for these fonts, the
+    # ones used (almost) only between verse brackets.
+    inside, everywhere = Counter(), Counter()
+    for b in args.train:
+        for page in books[b][0].values():
+            everywhere.update(s.split(":", 1)[0] for line in page for s in line)
+            inside.update(s.split(":", 1)[0] for span in verse_spans(page) for s in span)
+    verse_fonts = {f for f, n in inside.items() if n >= 0.9 * everywhere[f]}
+    for s in [s for s in font_map.outputs if s.split(":", 1)[0] in verse_fonts]:
+        del font_map.outputs[s]
+    font_map.outputs.update({s: [(w + SPACE, 0.0)] for s, w in verse_words.items()})
+    font_map.outputs.update({VERSE_OPEN: [("", 0.0)], VERSE_CLOSE: [("", 0.0)]})
+    font_map.metadata["verse_glyphs"] = len(verse_words)
+    print(f"verse glyphs learned: {len(verse_words)}")
     if args.save:
         font_map.save(args.save)
 
