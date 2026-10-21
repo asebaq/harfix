@@ -53,10 +53,13 @@ Best broken runs: 30131 `Sultan bold` 15% → 53%, 23 `adwa-assalaf` 34% → 56%
 
 ## Next
 
-The wrong maps look consistent within a font family (the same wrong output for the same
-ligature across a book). That is what the supervised decoder already learns for `AXt…` /
-`Adv…` fonts: per glyph, nothing, one letter, or a two-letter ligature, aligned against
-typed text. Training `scripts/train_font_maps.py` on these families (keyed by family and
-extracted character, as now, but keeping families that extract as Arabic letters) is the
-better route, where typed editions exist. Missing glyphs need the glyph codes themselves
-(names or outlines), not the extracted text.
+Within one book a wrong map is consistent (the same wrong output for the same glyph), but
+it is not a property of the font family: `mylotus` and `adwa-assalaf` are broken in some
+books and clean in others (17773, 800, 806), so the map comes with the PDF, not the
+typeface. Two routes remain:
+
+- Where a typed edition exists, learn the book's map as the supervised decoder does for
+  `AXt…` / `Adv…` fonts (per glyph: nothing, one letter, or a two-letter ligature, aligned
+  against typed text). That serves the corpus, not users with their own PDFs.
+- Read the glyphs instead of the extracted text: their codes, names or outlines identify
+  them across PDFs where the Unicode map does not. Missing letters need this route too.
