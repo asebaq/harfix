@@ -335,9 +335,10 @@ On the test split, windows of at least 80 Arabic letters:
 - Ship the Quran page-font table once redistribution is cleared
   (TarteelAI/quranic-universal-library#909).
 - More `decode` font families: verse fonts, pre-Unicode fonts with Latin glyph names
-  (one map per glyph name, learned once for every PDF), and fonts whose Unicode map swaps
-  letters (solved per book as a substitution cipher); and a comparison with a modern
-  vision-language OCR model.
+  (one map per glyph name, learned once for every PDF), and fonts whose Unicode map gives
+  wrong letters, learned from typed editions like the `AXt…` maps (a per-book
+  substitution solver did not work: [`reports/cipher_prototype.md`](reports/cipher_prototype.md));
+  and a comparison with a modern vision-language OCR model.
 - A follow-up to Docling's broken-text-layer check (docling-project/docling#4654) with
   the glyph code, glyph name and one-character-per-cell rules.
 - Docling, LangChain and LlamaIndex integrations.
