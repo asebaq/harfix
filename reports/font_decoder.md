@@ -128,12 +128,12 @@ and the `AQS…` fonts, which are not read).
 The table is not shipped: neither Quran.com nor QUL publishes a licence for the glyph
 codes, and permission to redistribute them has been asked
 (TarteelAI/quranic-universal-library#909). Without it, Quran page fonts stay unread.
-Built locally, it adds 43 trusted pages to the coverage below (461 broken pages, of which
-452 label clean), and decodes 4 clean pages, which still label clean. 8 of the added
-trusted pages do not label clean. On the 4 of them in book 30131, the body font has a
+Built locally, it adds 40 trusted pages to the coverage below (459 broken pages, of which
+455 label clean), and decodes 4 clean pages, which still label clean. 3 of the added
+trusted pages do not label clean. On the 2 of them in book 30131, the body font has a
 partly wrong Unicode map (`الؿال` for `المال`) that harfix's check passes, so decoding the
-quotations makes a page trusted whose body is not right; the other 4 (books 255, 806 and
-815) were not inspected.
+quotations makes a page trusted whose body is not right; the third (book 806) was not
+inspected.
 
 ## Quran quotations in the learned-map books
 
@@ -210,6 +210,58 @@ benchmark, only book 1258 changes (one more broken page decoded and clean), from
 overprint and `c128` changes; the Hesham books' benchmark pages were already decoded and
 trusted through their named body font, and stay so.
 
+## Word gaps
+
+`decode` rebuilds word gaps from glyph positions, and a page whose gaps come out too
+narrow runs its words together (`الخدريرضياللهعنهأنهكانيفعلذلك`). harfix's check passed
+such pages: the letters read as Arabic.
+
+- **Space glyphs.** Many PDFs draw a space glyph between words, sometimes narrower than
+  the gap `decode` reads as a space. `glyph_lines` now cuts a word wherever a space
+  glyph's centre falls in the gap between two glyphs (not over a glyph: some PDFs draw a
+  word's trailing space over its last letter), for fonts whose glyphs read as Arabic
+  letters or are named. A pre-Unicode font may draw a letter on the space's code: taking
+  the AXt books' spaces as gaps turned `الواجب` into `الوالجب`.
+- **Check.** A new reason, `merged_words` (route `reextract`): more than 15% of the
+  letters in tokens of 12 letters or more, in an extractor's output or in decoded text
+  (not in a raw text-layer scan). Typed Arabic stays under 7% (377 calibration pages),
+  and pdfminer.six, pdftotext and docling-parse under 3% (514 kept pages of the dev
+  split); `scripts/benchmark.py extractors` gives the same table with and without the rule.
+  On the synthetic test windows, clean text is flagged as often as before (1.2%, 1.8%,
+  4.2% at 80, 200, 500 letters), and text with half its spaces dropped is reported as
+  `merged_words` in 84%, 80% and 91% of windows (89%, 98%, 100% flagged at all).
+
+Space glyphs, on whole books (share of each page's words found in Shamela's
+transcriptions, mean over decoded pages):
+
+| Book | Fonts | Pages | Before | After | Pages better / worse by > 2 points |
+|---|---|---:|---:|---:|---:|
+| 30628 | named glyphs | 289 | 89.8% | 96.4% | 165 / 1 |
+| 926 | named glyphs | 626 | 88.5% | 90.3% | 284 / 29 |
+| 1258 | named glyphs | 222 | 91.2% | 92.8% | 88 / 11 |
+| 820 | named glyphs | 145 | 95.6% | 96.5% | 23 / 8 |
+| 909, 929, 937, 944, 946 | named glyphs, Hesham | 609 | 93.0-94.1% | ±0.3 points | 1 / 0 |
+| 9, 10, 18, 19, 1291, 1575, 1576 | learned map | 1,021 | | identical text | |
+
+In book 926 the worse pages gain stray punctuation from a font with a wrong map
+(`loutsshamy`) that the book-wide screening of kept fonts no longer rejects
+(`وعشري*ن *سن*ة`).
+
+On the benchmark's broken pages, with the Quran table built:
+
+| `decode` | Trusted, label clean | Trusted, label not clean | Not trusted |
+|---|---:|---:|---:|
+| 0.6.0 | 452 | 9 | 6 |
+| + space glyphs | 463 | 5 | 5 |
+| + `merged_words` | 455 | 4 | 14 |
+
+The check untrusts 9 pages (8 in the dev split, 1 in the test split). The benchmark's
+rule, which counts words, labels 8 of them clean; counted by letters, 8 of the 9 have
+less than 75% of their letters in words found (40-73%), since the run-together tokens are
+long (`إخوانهالمسلمينبالألفاظالحسنةوأسمائهمالتي`). 7 are in book 815, whose `LotusLinotype`
+draws no space glyphs between words. Without the Quran table, 417 → 418 trusted pages
+label clean and 1 does not (was 1).
+
 ## Coverage of the benchmark
 
 Command: `scripts/benchmark.py decode`. All labelled pages of the benchmark
@@ -220,7 +272,7 @@ the packaged map, so their rows are not held out.
 
 | Page label | Decoded and trusted | Of which clean after decoding | Decoded, not trusted | Not decoded |
 |---|---:|---:|---:|---:|
-| broken | 418 | 417 | 6 | 733 |
+| broken | 419 | 418 | 5 | 733 |
 | clean | 0 | 0 | 0 | 420 |
 
 | Book | Fonts | Decoded and trusted pages | Clean after decoding |
@@ -229,14 +281,14 @@ the packaged map, so their rows are not held out.
 | 10 | learned map | 35 | 35 |
 | 18 | learned map | 26 | 26 |
 | 1576 | learned map | 36 | 36 |
-| 820 | named glyphs | 39 | 39 |
+| 820 | named glyphs | 38 | 38 |
 | 909 | named glyphs | 37 | 37 |
 | 926 | named glyphs | 36 | 36 |
 | 937 | named glyphs | 37 | 37 |
 | 944 | named glyphs | 26 | 26 |
-| 946 | named glyphs | 37 | 37 |
+| 946 | named glyphs | 36 | 36 |
 | 1258 | named glyphs | 36 | 36 |
-| 30628 | named glyphs | 36 | 35 |
+| 30628 | named glyphs | 39 | 38 |
 
 So `decode` reads 36% of the benchmark's broken pages (27% in 0.4.0) and none of its clean
 ones. The share of words found is looser than word precision: a decoded word counts when

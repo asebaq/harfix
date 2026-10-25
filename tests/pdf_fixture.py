@@ -36,13 +36,14 @@ def build_pdf(
     letter_maps: dict[str, dict[str, str]],
     glyph_names: dict[str, dict[str, str]] | None = None,
     overprint: bool = False,
+    space_width: int = 600,
 ) -> bytes:
     """`pages`: per page, (font name, text line) pairs; an empty page gets an image only.
 
     `letter_maps[font]` says which letter each letter's code extracts as (a ToUnicode
     map). `glyph_names[font]` names each letter's glyph in the font's encoding; a font in
     both has both. `overprint` draws every line a second time, 0.3 pt to the right (fake
-    bold).
+    bold). `space_width` is the space glyph's advance, in 1/1000 em (letters are 600).
     """
     glyph_names = glyph_names or {}
     objects: list[bytes] = []
@@ -56,7 +57,7 @@ def build_pdf(
 
     font_refs = {}
     for name in {**letter_maps, **glyph_names}:
-        widths = " ".join(["600"] * (len(LETTERS) + 1))
+        widths = " ".join([str(space_width)] + ["600"] * len(LETTERS))
         descriptor = add(
             f"<< /Type /FontDescriptor /FontName /{name} /Flags 32 /FontBBox [0 -200 1000 800] "
             "/ItalicAngle 0 /Ascent 800 /Descent -200 /CapHeight 700 /StemV 80 >>".encode()

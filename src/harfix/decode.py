@@ -58,6 +58,7 @@ UNREADABLE = "unreadable"
 _SUBSET = re.compile(r"^[A-Z]{6}\+")
 _CID = re.compile(r"\(cid:(\d+)\)")
 _ARABIC_LETTER = re.compile(r"[\u0621-\u064A]")
+_ARABIC_TEXT = re.compile(r"[\u0600-\u06FF\uFB50-\uFDFF\uFE70-\uFEFF]")
 _LONE_ARTICLE = re.compile(r"(?<!\S)ال +(?=\S)")
 # Decode a page only when this share of its glyphs can be read (decoded or kept as they
 # are), and this share needs decoding through the map, or this many glyphs are read
@@ -75,13 +76,16 @@ _PLAIN_GAPS = {
 # ---------------------------------------------------------------- glyph streams
 
 
-def _chars(container: LTContainer) -> Iterator[LTChar]:
+def _chars(container: LTContainer, spaces: list[LTChar] | None = None) -> Iterator[LTChar]:
+    """The visible glyphs; the space glyphs go to `spaces` when it is given."""
     for item in container:
         if isinstance(item, LTChar):
             if item.get_text().strip():
                 yield item
+            elif spaces is not None:
+                spaces.append(item)
         elif isinstance(item, LTContainer):
-            yield from _chars(item)
+            yield from _chars(item, spaces)
 
 
 def glyph_lines(
@@ -91,7 +95,8 @@ def glyph_lines(
     `glyph_names` (from `font_glyph_names`) names the glyphs of a layout read by
     `_layouts`."""
     glyph_names = glyph_names or {}
-    chars = list(_chars(layout))
+    spaces: list[LTChar] = []
+    chars = list(_chars(layout, spaces))
     if not chars:
         return []
     size = statistics.median(c.size for c in chars)
@@ -108,6 +113,24 @@ def glyph_lines(
     lines: dict[int, list[LTChar]] = defaultdict(list)
     for c in chars:
         lines[min(peaks, key=lambda p: abs(p - c.matrix[5]))].append(c)
+    # Space glyphs the PDF draws between words: a word gap however narrow it is. Only from
+    # fonts whose glyphs read as Arabic letters (or are named): a pre-Unicode font may
+    # draw a letter on the space's code.
+    arabic: Counter = Counter()
+    total: Counter = Counter()
+    for c in chars:
+        total[c.fontname] += 1
+        text = c.get_text()
+        arabic[c.fontname] += bool(_ARABIC_TEXT.search(text)) or (
+            len(text) == 1 and _MARKER <= ord(text) < _MARKER + 256
+        )
+    space_marks: dict[int, list[float]] = defaultdict(list)
+    for s in spaces:
+        if arabic[s.fontname] < 0.5 * total[s.fontname] or not total[s.fontname]:
+            continue
+        y = min(peaks, key=lambda p: abs(p - s.matrix[5]))
+        if abs(y - s.matrix[5]) < 0.5 * size:
+            space_marks[y].append((s.x0 + s.x1) / 2)
     out = []
     for y in sorted(lines, reverse=True):
         row = _drop_overprints(sorted(lines[y], key=lambda c: -(c.x0 + c.x1) / 2), size)
@@ -115,14 +138,18 @@ def glyph_lines(
         # them), as two symbols by width: spaces between words, or the gap after a letter
         # that does not join inside a word. The font map learns which is which.
         body = [c for c in row if abs(c.matrix[5] - y) < 1]
-        cuts = sorted(
-            (
-                ((a.x0 + b.x1) / 2, GAP_WIDE if a.x0 - b.x1 > 0.28 * size else GAP_NARROW)
-                for a, b in zip(body, body[1:], strict=False)
-                if a.x0 - b.x1 > 0.15 * size
-            ),
-            reverse=True,
-        )
+        marks = space_marks.get(y, [])
+        cuts = []
+        for a, b in zip(body, body[1:], strict=False):
+            gap = a.x0 - b.x1
+            # The space's centre must fall in the gap: some PDFs draw a word's trailing
+            # space over its last letter.
+            spaced = any(b.x1 <= m <= a.x0 for m in marks)
+            if spaced or gap > 0.28 * size:
+                cuts.append(((a.x0 + b.x1) / 2, GAP_WIDE))
+            elif gap > 0.15 * size:
+                cuts.append(((a.x0 + b.x1) / 2, GAP_NARROW))
+        cuts.sort(reverse=True)
         symbols = []
         for c in row:
             while cuts and (c.x0 + c.x1) / 2 < cuts[0][0]:

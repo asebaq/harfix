@@ -90,3 +90,22 @@ A page whose letters are fixed but whose words are still split or reversed must 
 trusted; until the check rejects such pages (or the layout faults are fixed first),
 outline readings raise the number of wrong pages harfix trusts. Font coverage would then
 grow only with the corpus the table is built from.
+
+## Re-run with word gaps (2026-10-25)
+
+After `decode` took the PDF's space glyphs as word gaps and the check gained
+`merged_words` ([`font_decoder.md`](font_decoder.md#word-gaps)), the same command gives:
+
+| Page label | Outcome | `decode` | With outline readings |
+|---|---|---:|---:|
+| broken | trusted, labels clean | 455 | 464 |
+| broken | trusted, labels partial | 4 | 11 |
+| broken | not trusted | 14 | 115 |
+| broken | not decoded | 684 | 567 |
+| clean | trusted, labels clean | 4 | 5 |
+
+Outline readings now add 9 right pages for 7 wrong ones, against 8 for 46 before; the
+share of trusted pages that label clean would fall from 99.1% to 97.7%. Still no-go. 9
+of the 11 wrong pages are in book 138, where some glyphs are still read as the wrong
+letter or not at all (`قَبْدُ العََزِيزِ` for عَبْدُ العَزِيزِ, `مَُم,دٌ` for مُحَمَّدٌ, a shadda
+read as a comma): the check passes text with a few wrong letters per line.

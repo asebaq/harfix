@@ -160,7 +160,7 @@ pages = decode_pdf("book.pdf")  # DecodedPage: text, known_share, assessment, tr
 |---|---|---|
 | `keep` | Index as is. | — |
 | `repair` | Text is right but encoded or ordered badly; a deterministic fix exists. | `presentation_forms` (apply NFKC), `visual_order` (reverse each line), `unmapped_elongation` (delete U+FFFD), `bidi_controls` (delete embedding marks), `glyph_names` (spell out glyph names) |
-| `reextract` | The extractor damaged correct source text; try another extractor. | `mixed_reading_order`, `lam_alef_transposition`, `lost_word_boundaries` |
+| `reextract` | The extractor damaged correct source text; try another extractor. | `mixed_reading_order`, `lam_alef_transposition`, `lost_word_boundaries`, `merged_words` |
 | `ocr` | The text layer itself is wrong; read the pixels. | `same_script_substitution`, `unmapped_glyphs`, `legacy_encoding`, `quran_glyph_codes`, `no_text_layer` |
 
 Fonts with no Unicode map look different in each extractor. pdfminer.six writes their
@@ -279,9 +279,9 @@ typed text of the same pages, words as multisets:
 
 The seventh, book 1291, does not decode when left out, and the check rejects 67 of its
 69 pages. The packaged map is trained on all seven. On the benchmark's labelled pages,
-`decode` reads 418 of the 1,160 broken pages (36%: four learned-map books, eight books
-with named glyphs), 417 of them label clean after decoding, and it decodes none of the
-420 clean pages. With the Quran table built, it reads 43 more.
+`decode` reads 419 of the 1,160 broken pages (36%: four learned-map books, eight books
+with named glyphs), 418 of them label clean after decoding, and it decodes none of the
+420 clean pages. With the Quran table built, it reads 40 more.
 
 ### Synthetic corruptions
 

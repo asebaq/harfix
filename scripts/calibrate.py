@@ -201,6 +201,23 @@ def lost_boundaries(text: str) -> str:
     return " ".join(out)
 
 
+def merged_words(text: str) -> str:
+    """Half of the spaces between words lost, as when word gaps are rebuilt from glyph
+    positions in a font whose space is narrow."""
+    rng = _rng(text, "merged")
+    lines = []
+    for line in text.splitlines():
+        words = line.split(" ")
+        out = words[:1]
+        for word in words[1:]:
+            if rng.random() < 0.5:
+                out[-1] += word
+            else:
+                out.append(word)
+        lines.append(" ".join(out))
+    return "\n".join(lines)
+
+
 # (name, corruption, expected reason in scan mode, expected reason in text mode)
 # None means "must stay keep"; "-" means the fault is not observable in that mode.
 CASES: list[tuple[str, Callable[[str], str], str | None, str | None]] = [
@@ -229,6 +246,7 @@ CASES: list[tuple[str, Callable[[str], str], str | None, str | None]] = [
     ("presentation forms", presentation_forms, "presentation_forms", "presentation_forms"),
     ("lam-alef transposition", lam_alef_transposition, "-", "lam_alef_transposition"),
     ("lost word boundaries", lost_boundaries, "-", "lost_word_boundaries"),
+    ("merged words", merged_words, "-", "merged_words"),
 ]
 
 

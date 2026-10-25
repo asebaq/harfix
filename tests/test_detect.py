@@ -72,6 +72,15 @@ def test_words_split_into_fragments_need_reextraction(clean_text):
     assert result.reasons == ["lost_word_boundaries"]
 
 
+def test_words_run_together_need_reextraction(clean_text):
+    # Pairs of words without the space between them: the letters still read as Arabic.
+    words = clean_text.split(" ")
+    merged = " ".join("".join(words[i : i + 2]) for i in range(0, len(words), 2))
+    result = assess_text(merged)
+    assert result.route == "reextract"
+    assert result.reasons == ["merged_words"]
+
+
 def test_legacy_encoded_font_needs_ocr():
     legacy = "≤∞±≥ WM d L u ≤¥ v —dJ ¥∑ œbF« ≠ WOLd« …bd'« W}dF« dB W|—uNL f}z— —«d"
     result = assess_text(legacy, order_known=False)

@@ -35,6 +35,11 @@ class Thresholds:
     unspaced_bits: float = 5.4
     short_token_ratio: float = 0.46
     orientation_margin: float = 0.5
+    # Words run together (spaces lost): a share of the letters in tokens this long. Typed
+    # Arabic and the three extractors of the benchmark stay under 0.07; text decoded
+    # without the PDF's word gaps reaches 0.2-0.9 (scripts/benchmark.py decode, dev split).
+    merged_word_letters: int = 12
+    merged_word_share: float = 0.15
     presentation_form_ratio: float = 0.05
     unmapped_ratio: float = 0.02
     unmapped_min_glyphs: int = 5
@@ -93,6 +98,7 @@ class Measurements:
     short_token_ratio: float
     transposition_ratio: float
     decoration_runs: int
+    merged_word_share: float
 
 
 def line_direction(letters: str, model: CharLM, margin: float) -> bool | None:
@@ -168,6 +174,11 @@ def measure(text: str, models: ModelPair, thresholds: Thresholds) -> Measurement
         short_token_ratio=sum(1 for w in words if len(w) <= 2) / len(words) if words else 0.0,
         transposition_ratio=swapped / (al_words + swapped) if al_words + swapped else 0.0,
         decoration_runs=decoration_runs,
+        merged_word_share=(
+            sum(len(w) for w in words if len(w) >= thresholds.merged_word_letters) / len(unspaced)
+            if unspaced
+            else 0.0
+        ),
     )
 
 
@@ -302,6 +313,7 @@ def assess_text(
         bits_unspaced=round(m.bits_unspaced, 4),
         short_token_ratio=round(m.short_token_ratio, 4),
         decoration_runs=m.decoration_runs,
+        merged_word_share=round(m.merged_word_share, 4),
     )
     # Only meaningful for an extractor's final output. In a raw text-layer scan the spacing
     # comes from harfix's own extraction, so implausible text is treated as wrong letters.
@@ -317,6 +329,9 @@ def assess_text(
         # Even after fixing the reading direction the letters do not form Arabic words:
         # the font's glyph-to-letter mapping is wrong.
         flag("same_script_substitution", "ocr")
+    if order_known and not implausible and m.merged_word_share > t.merged_word_share:
+        # The letters are right but runs of words have lost the spaces between them.
+        flag("merged_words", "reextract")
     if prof.presentation_form_ratio > t.presentation_form_ratio:
         flag("presentation_forms", "repair")
 

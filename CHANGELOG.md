@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- `check` reports words run together (`merged_words`, route `reextract`): more than 15%
+  of the letters in tokens of 12 letters or more. Not seen in typed Arabic or in the
+  output of pdfminer.six, pdftotext or docling-parse on the benchmark; it stops `decode`
+  from trusting pages whose word gaps it could not rebuild.
+- `decode` takes the PDF's own space glyphs as word gaps, however narrow, in fonts that
+  read as Arabic or are named. Mean share of words found per page: book 30628 89.8% →
+  96.4%, 926 88.5% → 90.3%, 1258 91.2% → 92.8%; the learned-map books are unchanged.
+  With both changes, on the benchmark's broken pages (Quran table built), `decode` trusts
+  455 pages that label clean (452 before) and 4 that still have a quarter of their words
+  wrong (9 before).
+
 ## 0.6.0
 
 - The packaged font map reads Quran quotations in the `AXt` / `Adv` books: their

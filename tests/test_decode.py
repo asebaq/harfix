@@ -112,6 +112,15 @@ def test_a_font_whose_glyphs_are_named_is_decoded_with_the_packaged_map(tmp_path
     assert page.trusted
 
 
+def test_a_narrow_space_glyph_still_separates_words(tmp_path):
+    # The font draws a space too narrow to read as a word gap from the glyph positions.
+    names = {letter: NAMES[letter] + "isolated" for letter in LETTERS if letter in NAMES}
+    pages = [[("Named", line[::-1]) for line in CLEAN_LINES]]
+    path = tmp_path / "narrow.pdf"
+    path.write_bytes(build_pdf(pages, {}, glyph_names={"Named": names}, space_width=50))
+    assert decode_pdf(path)[0].text.split("\n") == CLEAN_LINES
+
+
 def test_text_in_unicode_fonts_on_a_decoded_page_is_kept(tmp_path):
     # A heading and a page number set in a Unicode font above a legacy-font body.
     identity = {letter: letter for letter in LETTERS}
