@@ -1,6 +1,6 @@
 [project]
 name = "harfix"
-version = "0.5.0"
+version = "0.6.0"
 description = "Quality gate for Arabic PDF text layers: detect garbled, reversed, or unmapped Arabic before it reaches your index."
 readme = "README.md"
 license = "Apache-2.0"

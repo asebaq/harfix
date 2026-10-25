@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.0
 
 - The packaged font map reads Quran quotations in the `AXt` / `Adv` books: their
   one-glyph-per-word `Advzy…` subsets are learned word by word from the typed quotations
