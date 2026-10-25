@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.7.0
 
 - `check` reports words run together (`merged_words`, route `reextract`): more than 15%
   of the letters in tokens of 12 letters or more. Not seen in typed Arabic or in the
