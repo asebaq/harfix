@@ -133,6 +133,23 @@ def test_text_in_unicode_fonts_on_a_decoded_page_is_kept(tmp_path):
     assert page.trusted
 
 
+def test_private_use_glyphs_of_kept_fonts_are_dropped(tmp_path):
+    # A symbol font's ornaments extract as private-use code points, which spell nothing.
+    identity = {letter: letter for letter in LETTERS}
+    ornaments = {letter: "\uf056" for letter in LETTERS}
+    pages = [
+        [("Naskh", "الفصل الأول"[::-1]), ("Symbols", "اااااا")]
+        + [("Legacy", line[::-1]) for line in CLEAN_LINES]
+    ]
+    path = tmp_path / "ornaments.pdf"
+    path.write_bytes(
+        build_pdf(pages, {"Legacy": ASCII_LEGACY, "Naskh": identity, "Symbols": ornaments})
+    )
+    page = decode_pdf(path, font_map=LEGACY_MAP)[0]
+    assert "\uf056" not in page.text
+    assert page.trusted
+
+
 def test_scan_points_to_decode_for_fonts_it_can_read(tmp_path):
     names = {letter: NAMES[letter] + "isolated" for letter in LETTERS if letter in NAMES}
     named = tmp_path / "named.pdf"

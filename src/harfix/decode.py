@@ -38,14 +38,23 @@ from pdfminer.layout import LAParams, LTChar, LTContainer
 from pdfminer.pdfdocument import PDFDocument
 from pdfminer.pdfinterp import PDFPageInterpreter, PDFResourceManager
 from pdfminer.pdfpage import PDFPage
-from pdfminer.pdfparser import PDFParser
+from pdfminer.pdfparser import PDFParser, PDFSyntaxError
 from pdfminer.pdftypes import PDFStream, resolve1
+from pdfminer.psparser import PSException
 
 from .detect import Assessment, assess_text
 from .glyphnames import fix_allah, glyph_letters
 from .model import CharLM, default_models
 from .normalize import decompose_presentation_forms
 from .repair import _LTR_RUN
+
+
+class HarfixError(Exception):
+    """Raised when a document cannot be read."""
+
+
+# What pdfminer raises on a file that is not a PDF or is damaged.
+PDF_ERRORS = (PDFSyntaxError, PSException, ValueError, KeyError)
 
 SPACE = " "
 GAP_WIDE = "gap:wide"
@@ -57,6 +66,8 @@ _EXACT = (NAMED, QURAN)
 UNREADABLE = "unreadable"
 _SUBSET = re.compile(r"^[A-Z]{6}\+")
 _CID = re.compile(r"\(cid:(\d+)\)")
+# Private-use code points name no character: a symbol font's ornaments and honorifics.
+_PRIVATE_USE = re.compile("[\ue000-\uf8ff\U000f0000-\U0010ffff]")
 _ARABIC_LETTER = re.compile(r"[\u0621-\u064A]")
 _ARABIC_TEXT = re.compile(r"[\u0600-\u06FF\uFB50-\uFDFF\uFE70-\uFEFF]")
 _LONE_ARTICLE = re.compile(r"(?<!\S)ال +(?=\S)")
@@ -369,7 +380,7 @@ class FontMap:
         family, _, char = symbol.partition(":")
         if is_gap(symbol) or family in self.families or family == UNREADABLE:
             return None
-        if _CID.search(char):
+        if _CID.search(char) or _PRIVATE_USE.search(char):
             return None
         return [(decompose_presentation_forms(char)[0], 0.0)]
 
@@ -516,14 +527,17 @@ def decode_pdf(
     """Decode the requested 1-based pages that have glyphs to decode and can be read."""
     font_map = font_map or default_font_map()
     lm = default_models().spaced
-    names = font_glyph_names(path)
     page_numbers = sorted({p - 1 for p in pages}) if pages is not None else None
     if page_numbers == []:
         return []
     numbers, pages_lines = [], []
-    for index, layout in enumerate(_layouts(path, page_numbers, names)):
-        numbers.append(page_numbers[index] + 1 if page_numbers is not None else index + 1)
-        pages_lines.append(glyph_lines(layout, names))
+    try:
+        names = font_glyph_names(path)
+        for index, layout in enumerate(_layouts(path, page_numbers, names)):
+            numbers.append(page_numbers[index] + 1 if page_numbers is not None else index + 1)
+            pages_lines.append(glyph_lines(layout, names))
+    except PDF_ERRORS as error:
+        raise HarfixError(f"Cannot read PDF {path}: {error}") from error
 
     out = []
     for number, lines in zip(numbers, screen_kept_fonts(pages_lines, font_map), strict=True):

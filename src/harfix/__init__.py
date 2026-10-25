@@ -1,6 +1,6 @@
 """harfix: find Arabic PDF text that will silently poison a search index."""
 
-from .decode import DecodedPage, FontMap, decode_pdf
+from .decode import DecodedPage, FontMap, HarfixError, decode_pdf
 from .detect import (
     ROUTES,
     Assessment,
@@ -11,7 +11,7 @@ from .detect import (
     assess_text,
 )
 from .model import CharLM
-from .pdf import DocumentReport, FontReport, HarfixError, PageReport, scan_pdf
+from .pdf import DocumentReport, FontReport, PageReport, scan_pdf
 from .repair import Change, RepairResult, repair_text
 
 __all__ = [

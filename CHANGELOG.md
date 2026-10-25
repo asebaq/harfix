@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- `decode` drops private-use characters from fonts it keeps as they are (a symbol font's
+  ornaments and honorifics, which spell nothing): they had reached the text of 31 trusted
+  pages in book 30628 and 9 in 909. Benchmark coverage is unchanged.
+- Command line: `--version`; `check` and `scan` print `no Arabic text to judge` instead
+  of `keep` when nothing could be judged, and `--fail-on` then exits 1; `repair --fail-on
+  reextract|ocr` and `decode --fail-on-untrusted` turn those commands into gates too.
+  Unreadable input (not a PDF, not UTF-8, a directory, pages past the end) exits 2 with a
+  one-line message instead of a traceback or an empty report.
+- `decode_pdf` raises `HarfixError` on a file that is not a readable PDF, as `scan_pdf`
+  does.
+
 ## 0.7.0
 
 - `check` reports words run together (`merged_words`, route `reextract`): more than 15%

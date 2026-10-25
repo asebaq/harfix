@@ -64,6 +64,11 @@ That book was typeset in pre-Unicode Arabic fonts (`AXt…`, `Adv…`), so its t
 extracts as Latin gibberish. `-v` lists every font on every page; `--json` prints the full
 report (fonts and pages `harfix decode` can read carry `"decodable": true`);
 `--fail-on repair|reextract|ocr` turns the scan into a CI or pipeline gate (exit code 1).
+A file with no Arabic text to judge also fails the gate: it is reported as `no Arabic
+text to judge`, not as `keep`. `check` behaves the same way, `repair --fail-on
+reextract|ocr` fails when a page is left unrepaired, and `decode --fail-on-untrusted`
+when a page with glyphs to decode comes out unreadable or untrusted. Unreadable input
+(not a PDF, not UTF-8, missing pages) exits with code 2.
 
 Check text produced by any extractor (Docling, pdftotext, Marker, an OCR engine). Pages
 separated by form feeds (pdftotext's default) are judged one by one; other text in runs of
@@ -149,6 +154,7 @@ fixed = repair_text(extracted_text)  # repaired text, a change log, unrepaired p
 fixed.text, fixed.changes, fixed.unrepaired
 
 verdict = assess_text(snippet)  # one piece of text: checks reading order too
+verdict.decisive  # False when there was too little Arabic text to judge (route stays keep)
 
 pages = decode_pdf("book.pdf")  # DecodedPage: text, known_share, assessment, trusted
 [p.text for p in pages if p.trusted]

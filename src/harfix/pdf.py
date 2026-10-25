@@ -9,22 +9,18 @@ from pathlib import Path
 
 from pdfminer.high_level import extract_pages
 from pdfminer.layout import LTAnno, LTChar, LTContainer, LTImage, LTPage, LTTextLine
-from pdfminer.pdfparser import PDFSyntaxError
-from pdfminer.psparser import PSException
 
 from .decode import (
     _QURAN_FONT,
     _SUBSET,
+    PDF_ERRORS,
+    HarfixError,
     default_font_map,
     font_glyph_names,
     quran_table_available,
 )
 from .detect import ROUTES, Assessment, Thresholds, assess_text, default_thresholds, worst
 from .model import ModelPair, default_models
-
-
-class HarfixError(Exception):
-    """Raised when a document cannot be scanned."""
 
 
 @dataclass
@@ -125,7 +121,7 @@ def scan_pdf(
             runs, has_images = _collect_page(layout)
             assessments = {font: assess(text) for font, text in runs.items()}
             scanned.append(_Page(number, runs, has_images, assessments))
-    except (PDFSyntaxError, PSException, ValueError, KeyError) as error:
+    except PDF_ERRORS as error:
         raise HarfixError(f"Cannot read PDF {path}: {error}") from error
 
     # A font's ToUnicode map is the same on every page, so runs too short to judge on their
